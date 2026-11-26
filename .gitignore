@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+# (poetry.lock is meant to be committed)
+
+# Nuitka and build output
+*.build/
+*.dist/
+*.onefile-build/
+nuitka-crash-report.xml
+*.exe
+*.lnk
+*.ico
+*.zip
+
+# editors and operating systems
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# never commit secrets or local data
+*.ovpn
+*.ppk
+*.pem
+*.key
+*.crt
+*.p12
+.env
+*.bin
+*.log
+tmp_*.txt
+corridoor_diagnostics*.txt

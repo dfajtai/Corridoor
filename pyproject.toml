@@ -1,0 +1,18 @@
+[project]
+name = "corridoor"
+version = "0.1.0"
+description = "Windows launcher: OpenVPN split tunnel to a single host, then PuTTY SSH or HopToDesk."
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"]
+# Upper bound: Nuitka 4.3 supports Python up to 3.14 (3.15 only experimentally).
+requires-python = ">=3.10,<3.15"
+# Runtime uses the standard library only (including Tkinter).
+dependencies = []
+
+[tool.poetry]
+package-mode = false          # an application built with Nuitka, not a library
+requires-poetry = ">=2.2"
+
+[tool.poetry.group.build.dependencies]
+nuitka = ">=4.3,<5"
