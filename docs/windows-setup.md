@@ -58,6 +58,7 @@ on the desktop and in the Start menu for all users.
 |---|---|---|
 | Corridoor SSH | `corridoor.exe` | connect with PuTTY |
 | Corridoor HopToDesk | `corridoor.exe --hoptodesk` | connect with HopToDesk |
+| Corridoor FileZilla | `corridoor.exe --filezilla` | connect with FileZilla (SFTP) |
 | Corridoor Settings | `corridoor.exe --config` | configure, test, diagnose |
 
 If no settings have been saved yet, every shortcut opens the settings window.
@@ -86,7 +87,7 @@ steps. Saved settings are kept (they live in a different folder).
 
 ## Daily use
 
-Start **Corridoor SSH** or **Corridoor HopToDesk**. The VPN comes up and the first
+Start **Corridoor SSH**, **Corridoor HopToDesk** or **Corridoor FileZilla**. The VPN comes up and the first
 session opens. The window then lists the sessions:
 
 ![Sessions window](images/sessions.png)

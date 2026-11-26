@@ -30,12 +30,13 @@ if (-not (Test-Path (Join-Path $dist "corridoor.exe"))) {
     throw "Nuitka did not produce $dist\corridoor.exe."
 }
 
-Copy-Item run.ico, hop.ico, config.ico -Destination $dist
+Copy-Item run.ico, hop.ico, files.ico, config.ico -Destination $dist
 
 $shell = New-Object -ComObject WScript.Shell
 $links = @(
     @{ Name = "Corridoor SSH";          Args = "";         Icon = "run.ico" },
     @{ Name = "Corridoor HopToDesk";    Args = "--hoptodesk"; Icon = "hop.ico" },
+    @{ Name = "Corridoor FileZilla";    Args = "--filezilla"; Icon = "files.ico" },
     @{ Name = "Corridoor Settings";     Args = "--config"; Icon = "config.ico" }
 )
 foreach ($link in $links) {

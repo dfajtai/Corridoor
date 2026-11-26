@@ -1,8 +1,9 @@
-"""Generate the three icons of Corridoor (standard library only).
+"""Generate the icons of Corridoor (standard library only).
 
 Each icon is a white door on a colored disc with a symbol cut out of it:
 ``run.ico`` a "play" triangle on green, ``hop.ico`` a monitor on orange,
-``config.ico`` a gear on blue. Each file holds several sizes as embedded PNGs.
+``files.ico`` two opposite arrows on red, ``config.ico`` a gear on blue.
+Each file holds several sizes as embedded PNGs.
 """
 
 import math
@@ -37,6 +38,15 @@ def monitor(x: float, y: float) -> bool:
     stand = abs(x) <= 0.10 and 0.30 <= y <= 0.50
     base = abs(x) <= 0.34 and 0.46 <= y <= 0.58
     return (frame and not screen) or stand or base
+
+
+def transfer(x: float, y: float) -> bool:
+    """Two opposite arrows: one up on the left, one down on the right."""
+    up_head = -0.62 <= y <= -0.12 and abs(x + 0.3) <= (y + 0.62) * 0.7
+    up_stem = abs(x + 0.3) <= 0.10 and -0.12 <= y <= 0.62
+    down_head = 0.12 <= y <= 0.62 and abs(x - 0.3) <= (0.62 - y) * 0.7
+    down_stem = abs(x - 0.3) <= 0.10 and -0.62 <= y <= 0.12
+    return up_head or up_stem or down_head or down_stem
 
 
 def door(symbol: Shape) -> Shape:
@@ -93,4 +103,5 @@ if __name__ == "__main__":
     folder = Path(__file__).parent
     write_ico(folder / "run.ico", (34, 150, 80), door(play))
     write_ico(folder / "hop.ico", (220, 120, 30), door(monitor))
+    write_ico(folder / "files.ico", (190, 40, 40), door(transfer))
     write_ico(folder / "config.ico", (40, 105, 190), door(gear))

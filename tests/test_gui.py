@@ -120,7 +120,7 @@ class GuiTest(unittest.TestCase):
 
     def test_tabs_are_in_the_expected_order(self) -> None:
         self.assertEqual([title for title, _, _ in gui.TABS],
-                         ["General", "VPN", "SSH", "HopToDesk", "FileZilla", "Advanced"])
+                         ["General", "VPN", "SSH", "HopToDesk", "Advanced"])
 
     def test_programs_and_their_switches_are_on_the_general_tab(self) -> None:
         """Paths and the allow switches live together on the first tab."""

@@ -48,6 +48,9 @@ TABS: list[tuple[str, str, list[Field]]] = [
         ("use_filezilla", "FileZilla: file transfer over SFTP", "check"),
         ("", "A program that is not allowed cannot be started and is not tested. "
              "Allow at least one.", "note"),
+        ("", "FileZilla has no tab: it needs no settings of its own. It opens "
+             "sftp://user@host:port with the port and user of the SSH tab and asks "
+             "for the password itself, Corridoor never passes it.", "note"),
     ]),
     ("VPN", "The OpenVPN connection. Only the remote host below is sent through "
             "it; everything else keeps its normal route.", [
@@ -60,7 +63,8 @@ TABS: list[tuple[str, str, list[Field]]] = [
         ("host", "Remote host (inside the VPN)", "text"),
     ]),
     ("SSH", "PuTTY windows on the remote host; you can open several at once. "
-            "Allow SSH on the General tab.", [
+            "Allow SSH on the General tab. The port and the user are also used "
+            "by FileZilla (SFTP).", [
         ("port", "SSH port", "text"),
         ("max_ssh", "Max. PuTTY windows at once (1-10)", "text"),
         ("ssh_user", "SSH user", "text"),
@@ -71,14 +75,6 @@ TABS: list[tuple[str, str, list[Field]]] = [
                   "time; the password is typed into HopToDesk. Allow HopToDesk on "
                   "the General tab.", [
         ("hoptodesk_port", "Direct IP port", "text"),
-    ]),
-    ("FileZilla", "File transfer over SFTP, through the SSH port. The user and "
-                  "port come from the SSH tab, and FileZilla asks for the password "
-                  "itself: Corridoor never passes it. Allow FileZilla on the "
-                  "General tab.", [
-        ("", "Nothing to set here. Make sure the SSH port and user are right. "
-             "The tests also start the server's SFTP subsystem with plink.exe "
-             "(from the PuTTY folder).", "note"),
     ]),
     ("Advanced", "You rarely need this tab.", [
         ("", "Programs Corridoor opens", "header"),

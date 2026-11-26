@@ -4,7 +4,7 @@
 
 The window has two columns. On the left, top to bottom:
 
-1. **Tabs** with the settings: General, VPN, SSH, HopToDesk, FileZilla, Advanced.
+1. **Tabs** with the settings: General, VPN, SSH, HopToDesk, Advanced.
 2. **Three boxes with actions**, each with one job (see [below](#settings-checks-pipes-what-is-what)).
 
 On the right, over the full height, is the **log** of whatever is running.
@@ -55,9 +55,10 @@ On the remote machine, enable **Settings > Network > Direct IP access** and allo
 port in its firewall. The password is entered in HopToDesk. Passing an IP address to
 `--connect` should be verified with your HopToDesk version.
 
-## Tab: FileZilla
+## FileZilla (no tab)
 
-File transfer over SFTP. There is nothing to set on this tab: the session opens
+File transfer over SFTP. FileZilla has no tab because it has no settings of its own
+(only its path and its switch on the General tab): the session opens
 `sftp://user@host:port` with the **user and port of the SSH tab**, so SSH password
 login or a key must work on the remote machine. **SSH** does not have to be allowed
 on the General tab, only **FileZilla**. FileZilla is started with `-l interactive`: it

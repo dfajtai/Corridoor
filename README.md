@@ -44,8 +44,8 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
 Then open **Corridoor Settings** (desktop shortcut), fill in the profile, VPN login
-and remote host, select **Quick test**, and start **Corridoor SSH** or
-**Corridoor HopToDesk**. Details: [Windows setup](docs/windows-setup.md).
+and remote host, select **Quick test**, and start **Corridoor SSH**,
+**Corridoor HopToDesk** or **Corridoor FileZilla**. Details: [Windows setup](docs/windows-setup.md).
 
 ## Features
 

@@ -2,6 +2,7 @@
 
     corridoor.exe               VPN + SSH (PuTTY) with the saved settings
     corridoor.exe --hoptodesk   VPN + HopToDesk with the saved settings
+    corridoor.exe --filezilla   VPN + FileZilla (SFTP) with the saved settings
     corridoor.exe --config      edit, test and diagnose the settings
 
 Without the build: ``python main.py --config`` in an elevated PowerShell.
@@ -30,6 +31,8 @@ def main() -> int:
     mode.add_argument("--config", action="store_true", help="open the settings")
     mode.add_argument("--hoptodesk", action="store_true",
                       help="connect with HopToDesk instead of SSH")
+    mode.add_argument("--filezilla", action="store_true",
+                      help="connect with FileZilla (SFTP) instead of SSH")
     args = parser.parse_args()
 
     if sys.platform != "win32":
@@ -64,7 +67,8 @@ def main() -> int:
         root.title(version.title("settings"))
         gui.ConfigWindow(root, settings or Settings())
     else:
-        gui.HubWindow(root, settings, "hoptodesk" if args.hoptodesk else "ssh")
+        first = "hoptodesk" if args.hoptodesk else "filezilla" if args.filezilla else "ssh"
+        gui.HubWindow(root, settings, first)
     root.mainloop()
     return 0
 
