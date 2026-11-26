@@ -18,7 +18,7 @@ program are on its own tab.
 | openvpn.exe | path of OpenVPN Community (always needed) |
 | putty.exe | path of PuTTY; `plink.exe` must be in the same folder |
 | hoptodesk.exe | path of HopToDesk |
-| filezilla.exe | path of FileZilla (usually `C:\Program Files\FileZilla FTP Clientilezilla.exe`) |
+| filezilla.exe | path of FileZilla (usually `C:\Program Files\FileZilla FTP Client\filezilla.exe`) |
 | Allowed programs | **SSH** (PuTTY windows), **HopToDesk**, **FileZilla**. A program that is not allowed cannot be started and is not tested. Allow at least one. |
 
 You only need the paths of the programs you allow.
