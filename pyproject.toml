@@ -1,7 +1,7 @@
 [project]
 name = "corridoor"
 version = "0.2"
-description = "Windows launcher: OpenVPN split tunnel to a single host, then PuTTY SSH or HopToDesk."
+description = "Windows launcher: OpenVPN split tunnel to a single host, then PuTTY SSH, HopToDesk and FileZilla (SFTP) sessions."
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]

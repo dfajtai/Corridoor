@@ -3,16 +3,18 @@
 *One corridor, one door.*
 
 A lightweight Windows launcher that brings up an OpenVPN **split tunnel** to a
-single host and then opens SSH (PuTTY), HopToDesk and FileZilla (file transfer) sessions to it. Only the
-traffic addressed to that host uses the VPN; everything else keeps its normal route.
-One corridor, one door, as many rooms behind it as you need: several sessions share
-the one VPN connection.
+single host and then opens sessions to it: **SSH** (PuTTY), **remote desktop**
+(HopToDesk) and **file transfer** (FileZilla over SFTP). Only the traffic addressed to
+that host uses the VPN; everything else keeps its normal route. One corridor, one
+door, as many rooms behind it as you need: several sessions share the one VPN
+connection.
 
 ![Settings window](docs/images/settings.png)
 
 > **Status:** VPN split tunnel, SSH, named pipes and HopToDesk have been used
-> successfully on Windows. Folder permissions, crash cleanup through the Job
-> Object and the build and install scripts have not been verified separately.
+> successfully on Windows. FileZilla (SFTP), starting the programs without
+> administrator rights, folder permissions, crash cleanup through the Job Object
+> and the build and install scripts have not been verified separately.
 > See [tested versions](docs/windows-setup.md#tested-versions).
 
 ## Install in 5 minutes
@@ -47,13 +49,33 @@ Then open **Corridoor Settings** (desktop shortcut), fill in the profile, VPN lo
 and remote host, select **Quick test**, and start **Corridoor SSH**,
 **Corridoor HopToDesk** or **Corridoor FileZilla**. Details: [Windows setup](docs/windows-setup.md).
 
+## Shortcuts
+
+It handles three kinds of sessions on the one VPN connection: **SSH terminals**
+(several PuTTY windows), **remote desktop** (one HopToDesk session) and **file
+transfer** (one FileZilla session over SFTP). Each has its own shortcut:
+
+| | Shortcut | Opens the VPN and |
+|---|---|---|
+| <img src="docs/images/icons/run.png" width="40" alt="SSH"> | **Corridoor SSH** | a PuTTY window |
+| <img src="docs/images/icons/hop.png" width="40" alt="HopToDesk"> | **Corridoor HopToDesk** | a HopToDesk remote desktop |
+| <img src="docs/images/icons/files.png" width="40" alt="FileZilla"> | **Corridoor FileZilla** | FileZilla over SFTP |
+| <img src="docs/images/icons/config.png" width="40" alt="Settings"> | **Corridoor Settings** | the settings, tests and diagnostics (no VPN) |
+
+More sessions can be added from the window of any of them.
+
 ## Features
 
 - **Single-host split tunnel:** routes pushed by the server are ignored.
-- **Several sessions on one VPN:** add SSH (PuTTY) windows, one HopToDesk session and
-  one FileZilla session (SFTP file transfer) to a list, and close each on its own.
-  Disconnecting closes all.
-- **Settings window** with a step-by-step connection test and full diagnostics.
+- **Several sessions on one VPN:** add SSH (PuTTY) windows (4 by default, up to 10),
+  one HopToDesk session and one FileZilla session (SFTP file transfer) to a list, and
+  close each on its own. Disconnecting closes all.
+- **Programs without administrator rights:** only the launcher and OpenVPN are
+  elevated; PuTTY, HopToDesk and FileZilla run as you, with normal rights.
+- **Settings window** with tabs, a step-by-step connection test (including the SFTP
+  subsystem for FileZilla) and full diagnostics.
+- **Live log:** next to the settings, with detail (info/debug) and text filter that
+  work while it runs.
 - **Encrypted storage:** settings, passwords and the profile copy are protected
   with Windows DPAPI in an administrator-only folder.
 - **Named pipes (test feature):** secrets reach OpenVPN and PuTTY without temporary files.
@@ -65,8 +87,8 @@ and remote host, select **Quick test**, and start **Corridoor SSH**,
 
 1. OpenVPN starts with `--route-nopull` and a `/32` route to the target.
 2. The launcher waits for `Initialization Sequence Completed`.
-3. It opens the first session (PuTTY or HopToDesk) against the target address;
-   more can be added from the list.
+3. It opens the first session (PuTTY, HopToDesk or FileZilla) against the target
+   address; more can be added from the list.
 4. It stops all sessions and OpenVPN when you disconnect.
 
 ## Documentation

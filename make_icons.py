@@ -3,7 +3,9 @@
 Each icon is a white door on a colored disc with a symbol cut out of it:
 ``run.ico`` a "play" triangle on green, ``hop.ico`` a monitor on orange,
 ``files.ico`` two opposite arrows on red, ``config.ico`` a gear on blue.
-Each file holds several sizes as embedded PNGs.
+Each file holds several sizes as embedded PNGs. The same pictures are also written
+as ``docs/images/icons/*.png`` (the .ico files are not tracked by git, the PNGs are,
+so that the README can show them).
 """
 
 import math
@@ -99,9 +101,18 @@ def write_ico(path: Path, background: Color, shape: Shape) -> None:
     path.write_bytes(directory + b"".join(images))
 
 
+ICONS: tuple[tuple[str, Color, Shape], ...] = (
+    ("run", (34, 150, 80), door(play)),
+    ("hop", (220, 120, 30), door(monitor)),
+    ("files", (190, 40, 40), door(transfer)),
+    ("config", (40, 105, 190), door(gear)),
+)
+PICTURE_SIZE: int = 128  # pixels of the PNGs for the documentation
+
 if __name__ == "__main__":
     folder = Path(__file__).parent
-    write_ico(folder / "run.ico", (34, 150, 80), door(play))
-    write_ico(folder / "hop.ico", (220, 120, 30), door(monitor))
-    write_ico(folder / "files.ico", (190, 40, 40), door(transfer))
-    write_ico(folder / "config.ico", (40, 105, 190), door(gear))
+    pictures = folder / "docs" / "images" / "icons"
+    pictures.mkdir(parents=True, exist_ok=True)
+    for name, color, shape in ICONS:
+        write_ico(folder / f"{name}.ico", color, shape)
+        (pictures / f"{name}.png").write_bytes(png(PICTURE_SIZE, color, shape))

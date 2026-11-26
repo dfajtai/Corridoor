@@ -61,6 +61,8 @@ on the desktop and in the Start menu for all users.
 | Corridoor FileZilla | `corridoor.exe --filezilla` | connect with FileZilla (SFTP) |
 | Corridoor Settings | `corridoor.exe --config` | configure, test, diagnose |
 
+The icons are in the [README](../README.md#shortcuts).
+
 If no settings have been saved yet, every shortcut opens the settings window.
 
 Without building, run it from an elevated PowerShell window:
