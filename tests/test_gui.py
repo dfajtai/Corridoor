@@ -120,13 +120,27 @@ class GuiTest(unittest.TestCase):
 
     def test_tabs_are_in_the_expected_order(self) -> None:
         self.assertEqual([title for title, _, _ in gui.TABS],
-                         ["VPN", "SSH", "HopToDesk", "File transfer", "Advanced"])
+                         ["General", "VPN", "SSH", "HopToDesk", "FileZilla", "Advanced"])
+
+    def test_programs_and_their_switches_are_on_the_general_tab(self) -> None:
+        """Paths and the allow switches live together on the first tab."""
+        general = {name for name, _, kind in gui.TABS[0][2]
+                   if kind not in ("header", "note")}
+        self.assertEqual(general, {
+            "openvpn_exe", "putty_exe", "hoptodesk_exe", "filezilla_exe",
+            "use_ssh", "use_hoptodesk", "use_filezilla"})
+
+    def test_other_tabs_have_no_program_path_or_switch(self) -> None:
+        for title, _, fields in gui.TABS[1:]:
+            for name, _, _ in fields:
+                self.assertFalse(name.endswith("_exe") or name.startswith("use_"),
+                                 f"{name} belongs on the General tab, not {title}")
 
     def test_every_tab_explains_itself(self) -> None:
         for title, intro, _ in gui.TABS:
             self.assertTrue(intro.strip(), title)
 
-    def test_file_transfer_alone_is_a_valid_client_choice(self) -> None:
+    def test_filezilla_alone_is_a_valid_client_choice(self) -> None:
         window = self.window()
         window.variables["use_ssh"].set(False)
         window.variables["use_filezilla"].set(True)
@@ -134,7 +148,7 @@ class GuiTest(unittest.TestCase):
             self.assertIsNotNone(window.save())
             save.assert_called_once()
 
-    def test_file_transfer_needs_a_valid_ssh_port(self) -> None:
+    def test_filezilla_needs_a_valid_ssh_port(self) -> None:
         window = self.window()
         window.variables["use_ssh"].set(False)
         window.variables["use_filezilla"].set(True)
@@ -143,7 +157,7 @@ class GuiTest(unittest.TestCase):
             self.assertIsNone(window.save())
             save.assert_not_called()
 
-    def test_hub_file_transfer_button_passes_the_command_on(self) -> None:
+    def test_hub_filezilla_button_passes_the_command_on(self) -> None:
         connection = MagicMock()
         self.hub(connection).add_filezilla()
         connection.add_filezilla.assert_called_once()

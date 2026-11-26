@@ -19,7 +19,7 @@ from modules listed above it.
 | `corridoor/connection.py` | `Connection`: the tunnel plus the list of client sessions |
 | `corridoor/diagnose.py` | the full diagnostics run, built on `Session` |
 | `corridoor/pipetest.py` | the named pipe self-test, built on `Session` |
-| `corridoor/gui.py` | Tkinter windows: `ConfigWindow` (tabs; actions in three boxes: settings, checks, pipes) and `HubWindow` |
+| `corridoor/gui.py` | Tkinter windows: `ConfigWindow` (tabs, General first; actions in three boxes: settings, checks, pipes) and `HubWindow` |
 
 ## Data flow of a connection
 
@@ -41,7 +41,7 @@ is held while a process is started or stopped.
 ## Sessions on one connection
 
 - Up to `MAX_SSH` (10) SSH sessions, at most one HopToDesk session and at most one
-  file transfer session (FileZilla, `sftp://user@host:port`, started with
+  FileZilla session (`sftp://user@host:port`, started with
   `-l interactive`, so it asks for the password itself).
 - Every PuTTY window has its own password secret (file or pipe), released when
   that window closes. A password *file* is also deleted after 10 seconds.

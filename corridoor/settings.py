@@ -34,7 +34,7 @@ class Settings:
     hoptodesk_port: str = DEFAULT_PORT
     hoptodesk_exe: str = r"C:\Program Files\HopToDesk\hoptodesk.exe"
 
-    # --- File transfer (FileZilla over SFTP, through the SSH port) ---
+    # --- FileZilla (file transfer over SFTP, through the SSH port) ---
     use_filezilla: bool = False
     filezilla_exe: str = r"C:\Program Files\FileZilla FTP Client\filezilla.exe"
 

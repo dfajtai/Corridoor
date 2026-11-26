@@ -173,7 +173,7 @@ class HopToDeskSessionTest(ConnectionTestCase):
         self.wait_until(lambda: self.titles() == ["HopToDesk"])
 
 
-class FileTransferTest(ConnectionTestCase):
+class FileZillaTest(ConnectionTestCase):
     """FileZilla: one session, opened on an sftp address, without a password."""
 
     def setUp(self) -> None:
@@ -189,7 +189,7 @@ class FileTransferTest(ConnectionTestCase):
     def test_opens_an_sftp_address_and_asks_for_the_password_itself(self) -> None:
         connection = self.start()
         connection.add_filezilla()
-        self.wait_until(lambda: self.titles() == ["SSH #1", "File transfer"])
+        self.wait_until(lambda: self.titles() == ["SSH #1", "FileZilla"])
         self.assertEqual(self.arguments(),
                          ["-l", "interactive", f"sftp://x@127.0.0.1:{self.port}"])
 
@@ -219,7 +219,7 @@ class FileTransferTest(ConnectionTestCase):
         connection.add_filezilla()
         time.sleep(0.5)
         self.assertEqual(len(self.numbers()), 2)
-        self.assertIn("Cannot add another file transfer session", self.log_text())
+        self.assertIn("Cannot add another FileZilla session", self.log_text())
 
     def test_it_is_only_removed_from_the_list(self) -> None:
         connection = self.start()

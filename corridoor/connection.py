@@ -5,7 +5,7 @@ sessions until the user disconnects:
 
 * any number of SSH sessions (one PuTTY window each, up to ``MAX_SSH``),
 * at most one HopToDesk session,
-* at most one file transfer session (FileZilla).
+* at most one FileZilla session.
 
 A session can be closed on its own without touching the VPN. Disconnecting
 closes every session and then the tunnel. If the launcher crashes, the Windows
@@ -41,7 +41,7 @@ SSH: str = "ssh"
 HOPTODESK: str = "hoptodesk"
 FILEZILLA: str = "filezilla"
 KIND_NAMES: dict[str, str] = {SSH: "SSH", HOPTODESK: "HopToDesk",
-                              FILEZILLA: "file transfer"}
+                              FILEZILLA: "FileZilla"}
 
 log: logging.Logger = logging.getLogger("corridoor")
 
@@ -74,7 +74,7 @@ class ClientSession:
         if self.kind == HOPTODESK:
             return "HopToDesk"
         if self.kind == FILEZILLA:
-            return "File transfer"
+            return "FileZilla"
         return f"SSH #{self.number}"
 
     def ended(self) -> bool:
@@ -108,7 +108,7 @@ class Connection:
         """Return True if a session of this kind may be added now.
 
         The tunnel must be up, the client must be switched on in the settings,
-        and the limits must not be reached: one HopToDesk, one file transfer,
+        and the limits must not be reached: one HopToDesk, one FileZilla,
         ``MAX_SSH`` SSH.
         """
         return self.state == "up" and self._allowed(kind)
@@ -122,7 +122,7 @@ class Connection:
         self._commands.put(("add", HOPTODESK))
 
     def add_filezilla(self) -> None:
-        """Ask for the file transfer session (started by the connection thread)."""
+        """Ask for the FileZilla session (started by the connection thread)."""
         self._commands.put(("add", FILEZILLA))
 
     def close_session(self, number: int) -> None:

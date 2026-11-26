@@ -37,7 +37,7 @@ Leftover temporary files from a killed session are removed at the next start.
 ## Limitations
 
 - One VPN connection and one target host at a time; on it up to 10 SSH sessions and
-  one HopToDesk session and one file transfer (FileZilla) session.
+  one HopToDesk session and one FileZilla session.
 - Only the target's IPv4 address is routed. Server-pushed routes and DNS settings
   are ignored.
 - Encrypted VPN private keys and challenge-based two-factor authentication are not

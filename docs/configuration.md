@@ -4,28 +4,42 @@
 
 The window has three parts, top to bottom:
 
-1. **Tabs** with the settings: VPN, SSH, HopToDesk, File transfer, Advanced.
+1. **Tabs** with the settings: General, VPN, SSH, HopToDesk, FileZilla, Advanced.
 2. **Three boxes with actions**, each with one job (see [below](#settings-checks-pipes-what-is-what)).
 3. The **log** of whatever is running.
 
+## Tab: General
+
+Where the programs are, and which of them Corridoor may start. The settings of each
+program are on its own tab.
+
+| Setting | Description |
+|---|---|
+| openvpn.exe | path of OpenVPN Community (always needed) |
+| putty.exe | path of PuTTY; `plink.exe` must be in the same folder |
+| hoptodesk.exe | path of HopToDesk |
+| filezilla.exe | path of FileZilla (usually `C:\Program Files\FileZilla FTP Clientilezilla.exe`) |
+| Allowed programs | **SSH** (PuTTY windows), **HopToDesk**, **FileZilla**. A program that is not allowed cannot be started and is not tested. Allow at least one. |
+
+You only need the paths of the programs you allow.
+
 ## Tab: VPN
+
+![VPN tab](images/settings-vpn.png)
 
 | Setting | Description |
 |---|---|
 | OpenVPN profile | path of the `.ovpn` file |
 | Keep an encrypted copy | stores the profile, with certificates and keys embedded, in the encrypted store (default: on). Save again after changing the original. |
 | VPN user / password | leave the user empty for certificate-only authentication |
-| openvpn.exe | path of the OpenVPN executable |
 | Remote host | IPv4 address of the target inside the VPN. A host name must resolve **without** the VPN. |
 
 ## Tab: SSH (PuTTY)
 
 | Setting | Description |
 |---|---|
-| Use SSH | enables SSH in tests and diagnostics and permits SSH sessions |
 | SSH port / user / password | login data; the password may stay empty when a key is used |
 | SSH key `.ppk` | optional private key. Only its path is stored. |
-| putty.exe | path of PuTTY (`plink.exe` must be in the same folder) |
 
 With a passphrase-protected key, the non-interactive login test fails.
 
@@ -33,27 +47,21 @@ With a passphrase-protected key, the non-interactive login test fails.
 
 | Setting | Description |
 |---|---|
-| Use HopToDesk | disabled by default |
 | Direct IP port | default `21118` |
-| hoptodesk.exe | path of HopToDesk |
 
 On the remote machine, enable **Settings > Network > Direct IP access** and allow the
 port in its firewall. The password is entered in HopToDesk. Passing an IP address to
 `--connect` should be verified with your HopToDesk version.
 
-## Tab: File transfer (FileZilla)
+## Tab: FileZilla
 
-| Setting | Description |
-|---|---|
-| Use file transfer | disabled by default |
-| filezilla.exe | path of FileZilla (usually `C:\Program Files\FileZilla FTP Client\filezilla.exe`) |
-
-The session opens `sftp://user@host:port` with the **user and port of the SSH tab**,
-so SSH password login or a key must work on the remote machine, but **Use SSH** does
-not have to be on. FileZilla is started with `-l interactive`: it asks for the
-password itself, so Corridoor never gives it one and it never appears on a command
-line. If you use a key, add it in FileZilla (**Settings > SFTP**). Opening an sftp
-address from the command line should be verified with your FileZilla version.
+File transfer over SFTP. There is nothing to set on this tab: the session opens
+`sftp://user@host:port` with the **user and port of the SSH tab**, so SSH password
+login or a key must work on the remote machine. **SSH** does not have to be allowed
+on the General tab, only **FileZilla**. FileZilla is started with `-l interactive`: it
+asks for the password itself, so Corridoor never gives it one and it never appears on
+a command line. If you use a key, add it in FileZilla (**Settings > SFTP**). Opening
+an sftp address from the command line should be verified with your FileZilla version.
 
 Like HopToDesk, FileZilla usually hands the request over to a running instance, so
 **Close session** only removes it from the list; close the FileZilla window yourself.
@@ -119,7 +127,7 @@ A test does not change how secrets are handled. It connects (or probes) and repo
 
 A missing ping reply is only a warning, because ICMP is often blocked. A UDP VPN port
 cannot be probed in advance; the handshake is the actual test. The HopToDesk and
-file transfer checks cover port reachability, not authentication.
+FileZilla checks cover port reachability, not authentication.
 
 ### What is the Pipe test?
 

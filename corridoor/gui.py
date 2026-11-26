@@ -34,6 +34,20 @@ LOG_CHOICES: list[str] = list(store.LOG_LEVELS)
 # ``note`` show text only (a bold title / an explanation) and have no name.
 Field = tuple[str, str, str]
 TABS: list[tuple[str, str, list[Field]]] = [
+    ("General", "Where the programs are, and which of them Corridoor may start. "
+                "The settings of each program are on its own tab.", [
+        ("", "Programs", "header"),
+        ("openvpn_exe", "openvpn.exe (always needed)", "file"),
+        ("putty_exe", "putty.exe", "file"),
+        ("hoptodesk_exe", "hoptodesk.exe", "file"),
+        ("filezilla_exe", "filezilla.exe", "file"),
+        ("", "Allowed programs (OpenVPN is always used)", "header"),
+        ("use_ssh", "SSH: PuTTY windows", "check"),
+        ("use_hoptodesk", "HopToDesk: remote desktop", "check"),
+        ("use_filezilla", "FileZilla: file transfer over SFTP", "check"),
+        ("", "A program that is not allowed cannot be started and is not tested. "
+             "Allow at least one.", "note"),
+    ]),
     ("VPN", "The OpenVPN connection. Only the remote host below is sent through "
             "it; everything else keeps its normal route.", [
         ("profile_file", "OpenVPN profile", "file"),
@@ -42,28 +56,26 @@ TABS: list[tuple[str, str, list[Field]]] = [
         ("vpn_password", "VPN password", "secret"),
         ("", "Leave the user empty if the profile logs in with a certificate only.",
          "note"),
-        ("openvpn_exe", "openvpn.exe", "file"),
         ("host", "Remote host (inside the VPN)", "text"),
     ]),
-    ("SSH", "A PuTTY window on the remote host. You can open several at once.", [
-        ("use_ssh", "Use SSH", "check"),
+    ("SSH", "PuTTY windows on the remote host; you can open several at once. "
+            "Allow SSH on the General tab.", [
         ("port", "SSH port", "text"),
         ("ssh_user", "SSH user", "text"),
         ("ssh_password", "SSH password", "secret"),
         ("ssh_key", "SSH key .ppk (optional)", "file"),
-        ("putty_exe", "putty.exe", "file"),
     ]),
-    ("HopToDesk", "Remote desktop through HopToDesk (direct IP). One session at a "
-                  "time; the password is typed into HopToDesk.", [
-        ("use_hoptodesk", "Use HopToDesk", "check"),
+    ("HopToDesk", "Remote desktop through HopToDesk (direct IP), one session at a "
+                  "time; the password is typed into HopToDesk. Allow HopToDesk on "
+                  "the General tab.", [
         ("hoptodesk_port", "Direct IP port", "text"),
-        ("hoptodesk_exe", "hoptodesk.exe", "file"),
     ]),
-    ("File transfer", "FileZilla over SFTP, through the SSH port. The user and "
-                      "port come from the SSH tab. FileZilla asks for the password "
-                      "itself, Corridoor never passes it.", [
-        ("use_filezilla", "Use file transfer (FileZilla)", "check"),
-        ("filezilla_exe", "filezilla.exe", "file"),
+    ("FileZilla", "File transfer over SFTP, through the SSH port. The user and "
+                  "port come from the SSH tab, and FileZilla asks for the password "
+                  "itself: Corridoor never passes it. Allow FileZilla on the "
+                  "General tab.", [
+        ("", "Nothing to set here. Make sure the SSH port and user are right.",
+         "note"),
     ]),
     ("Advanced", "You rarely need this tab.", [
         ("", "Handing secrets to programs", "header"),
@@ -306,7 +318,7 @@ class ConfigWindow(LogWindow):
             problem = "The profile and the remote host are required."
         elif not (settings.use_ssh or settings.use_hoptodesk
                   or settings.use_filezilla):
-            problem = "Switch on at least one of SSH, HopToDesk and file transfer."
+            problem = "Allow at least one of SSH, HopToDesk and FileZilla (General tab)."
         elif (settings.use_ssh or settings.use_filezilla) and not valid(settings.port):
             problem = "The SSH port is invalid."
         elif settings.use_hoptodesk and not valid(settings.hoptodesk_port):
@@ -394,8 +406,8 @@ class HubWindow(LogWindow):
 
     The VPN is brought up at once and the first session of the requested kind
     is added. More SSH sessions (up to 10), one HopToDesk session and one
-    file transfer session (FileZilla) can be added; each can be closed alone. ``Disconnect`` (or the window's X) closes
-    all sessions and the VPN. After a failure the window stays open with the log.
+    FileZilla session can be added; each can be closed alone. ``Disconnect``
+    (or the window's X) closes all sessions and the VPN. After a failure the window stays open with the log.
     """
 
     def __init__(self, root: tk.Tk, settings: Settings, client: str) -> None:
@@ -415,7 +427,7 @@ class HubWindow(LogWindow):
                                          command=self.add_ssh)
         self.add_hop_button = ttk.Button(buttons, text="Add HopToDesk session",
                                          command=self.add_hoptodesk)
-        self.add_files_button = ttk.Button(buttons, text="Add file transfer",
+        self.add_files_button = ttk.Button(buttons, text="Add FileZilla session",
                                            command=self.add_filezilla)
         self.close_button = ttk.Button(buttons, text="Close session",
                                        command=self.close_selected)
@@ -443,7 +455,7 @@ class HubWindow(LogWindow):
             self.connection.add_hoptodesk()
 
     def add_filezilla(self) -> None:
-        """Add the file transfer session (FileZilla) to the connection."""
+        """Add the FileZilla session to the connection."""
         if self.connection:
             self.connection.add_filezilla()
 

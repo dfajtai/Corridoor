@@ -3,12 +3,12 @@
 *One corridor, one door.*
 
 A lightweight Windows launcher that brings up an OpenVPN **split tunnel** to a
-single host and then opens SSH (PuTTY), HopToDesk and file transfer (FileZilla) sessions to it. Only the
+single host and then opens SSH (PuTTY), HopToDesk and FileZilla (file transfer) sessions to it. Only the
 traffic addressed to that host uses the VPN; everything else keeps its normal route.
 One corridor, one door, as many rooms behind it as you need: several sessions share
 the one VPN connection.
 
-![Sessions window](docs/images/sessions.png)
+![Settings window](docs/images/settings.png)
 
 > **Status:** VPN split tunnel, SSH, named pipes and HopToDesk have been used
 > successfully on Windows. Folder permissions, crash cleanup through the Job
@@ -51,7 +51,7 @@ and remote host, select **Quick test**, and start **Corridoor SSH** or
 
 - **Single-host split tunnel:** routes pushed by the server are ignored.
 - **Several sessions on one VPN:** add SSH (PuTTY) windows, one HopToDesk session and
-  one file transfer session (FileZilla, SFTP) to a list, and close each on its own.
+  one FileZilla session (SFTP file transfer) to a list, and close each on its own.
   Disconnecting closes all.
 - **Settings window** with a step-by-step connection test and full diagnostics.
 - **Encrypted storage:** settings, passwords and the profile copy are protected

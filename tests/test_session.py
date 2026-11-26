@@ -42,7 +42,7 @@ class RunTest(SessionTestCase):
         self.assertEqual(self.new_session().key_option(), [])
 
 
-class FileTransferCheckTest(SessionTestCase):
+class FileZillaCheckTest(SessionTestCase):
     """FileZilla needs the SSH port, but neither PuTTY nor an SSH login."""
 
     def setUp(self) -> None:

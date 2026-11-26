@@ -6,7 +6,7 @@
 |---|---|---|
 | OpenVPN **Community** 2.7 | [openvpn.net/community-downloads](https://openvpn.net/community-downloads/) | always; provides `openvpn.exe`. OpenVPN Connect is not supported. |
 | PuTTY 0.77 or newer | [PuTTY latest release](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html) | SSH mode; `putty.exe` and `plink.exe` in the same folder |
-| FileZilla Client | [filezilla-project.org](https://filezilla-project.org/) | file transfer sessions (SFTP) |
+| FileZilla Client | [filezilla-project.org](https://filezilla-project.org/) | FileZilla sessions (file transfer over SFTP) |
 | HopToDesk **1.46.90** or newer | [HopToDesk64.exe](https://dl.hoptodesk.com/HopToDesk64.exe), [all downloads](https://www.hoptodesk.com/download) | HopToDesk mode |
 | Python **3.10 to 3.14**, 64-bit | [python.org for Windows](https://www.python.org/downloads/windows/) | build, or running from source |
 | Visual Studio Build Tools | [C++ build tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) | build; select **Desktop development with C++** |
@@ -71,14 +71,13 @@ steps. Saved settings are kept (they live in a different folder).
 ## 3. First configuration
 
 1. Open **Corridoor Settings**.
-2. **VPN tab:** select the `.ovpn` profile, keep the encrypted copy on, enter the VPN
-   user and password, check the `openvpn.exe` path, and enter the remote host: the
-   internal IP only, without user name, port or leading zeros.
-3. **SSH tab:** enable it, enter port, user and password (or key), check `putty.exe`.
-4. **HopToDesk tab:** enable it, keep port `21118`, check the `hoptodesk.exe` path
-   (`Program Files` or `Program Files (x86)`).
-5. **File transfer tab:** enable it and check the `filezilla.exe` path. It uses the
-   user and port of the SSH tab.
+2. **General tab:** check the program paths (`Program Files` or
+   `Program Files (x86)`) and allow the programs you want: SSH, HopToDesk, FileZilla.
+3. **VPN tab:** select the `.ovpn` profile, keep the encrypted copy on, enter the VPN
+   user and password, and the remote host: the internal IP only, without user name,
+   port or leading zeros.
+4. **SSH tab:** port, user and password (or key). FileZilla uses the same user and port.
+5. **HopToDesk tab:** keep port `21118`.
 6. Select **Quick test**. The first SSH login may fail because the host key is unknown:
    close the settings, start **Corridoor SSH**, compare the fingerprint with the one
    noted on the remote computer, and accept it only if they match.
@@ -96,7 +95,7 @@ session opens. The window then lists the sessions:
 |---|---|
 | Add SSH session | opens another PuTTY window with the saved SSH settings (up to 10) |
 | Add HopToDesk session | opens HopToDesk (only one; disabled while it is listed) |
-| Add file transfer | opens FileZilla on the target over SFTP (only one; FileZilla asks for the password) |
+| Add FileZilla session | opens FileZilla on the target over SFTP (only one; FileZilla asks for the password) |
 | Close session | closes the selected session; the VPN and the others stay |
 | Disconnect (or the window's X) | closes all sessions and the VPN |
 
