@@ -91,6 +91,7 @@ def run(session: "Session") -> bool:
         values["login"] = True
 
     log.info("=== Diagnostics started ===")
+    session.log_start("diagnostics")
     cancelled = False
     try:
         with winapi.single_instance():

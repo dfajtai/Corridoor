@@ -54,6 +54,7 @@ def run(session: "Session") -> Optional[dict[str, bool]]:
     variants = vpn_variants(original.copy_profile, bool(original.vpn_user))
     test_ssh = bool(original.use_ssh and original.ssh_user and original.ssh_password)
     log.info("=== Pipe test started ===")
+    session.log_start("pipe test")
     try:
         with winapi.single_instance():
             session.check_programs(("ssh",) if test_ssh else ())

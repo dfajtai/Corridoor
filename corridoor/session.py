@@ -16,6 +16,7 @@ The class is organised in four groups of methods:
 
 import logging
 import os
+import platform
 import socket
 import subprocess
 import tempfile
@@ -122,6 +123,12 @@ class Session:
             raise StepError(str(error)) from error
         log.info("%s %s", label, "done with WARNING" if self.warned else "OK")
 
+    def log_start(self, title: str) -> None:
+        """Log what a job starts with (debug level): settings without passwords."""
+        log.debug("%s: Python %s on %s", title, platform.python_version(),
+                  platform.platform())
+        log.debug("%s: settings %s", title, self.settings.masked())
+
     def warn(self, message: str) -> None:
         """Report a problem that does not stop the session."""
         self.warned = True
@@ -152,6 +159,8 @@ class Session:
             The path to give to the program and the announcer to call with the
             process id right after the program has been started.
         """
+        log.debug("secret (%d characters) via %s", len(content),
+                  "named pipe" if use_pipe else "temporary file")  # never the text
         if not use_pipe:
             path = self.temp_file(content)
             return Secret(str(path), ignore_process_id,
@@ -159,6 +168,7 @@ class Session:
         pipe = SecretPipe(content.encode("utf-8"))
         pipe.start()
         self.pipes.append(pipe)
+        log.debug("  pipe %s", pipe.path)
 
         def release() -> None:
             pipe.close()
@@ -169,6 +179,8 @@ class Session:
 
     def cleanup(self) -> None:
         """Close all pipes and delete all temporary files of this session."""
+        log.debug("cleanup: %d pipes, %d temporary files", len(self.pipes),
+                  len(self.temp_files))
         while self.pipes:
             self.pipes.pop().close()
         for path in self.temp_files:
@@ -199,6 +211,7 @@ class Session:
         if "hoptodesk" in clients:
             programs.append(Path(self.settings.hoptodesk_exe))
         for program in programs:
+            log.debug("  checking %s", program)
             if not program.is_file():
                 raise StepError(f"file not found: {program}")
 
@@ -296,11 +309,13 @@ class Session:
                 self.settings.pipe_vpn_auth)
             announce.append(auth.announce)
             command += ["--auth-user-pass", auth.path]
+        log.debug("starting OpenVPN in %s: %s", folder, command)
         process = subprocess.Popen(
             command, cwd=folder, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
             errors="replace", creationflags=winapi.NO_WINDOW,
         )
+        log.debug("OpenVPN process id %d", process.pid)
         for announcer in announce:
             announcer(process.pid)
         ready = threading.Event()
@@ -330,8 +345,14 @@ class Session:
             StepError: On a rejected login (reported at once, because retries
                 could lock the account), an early exit or a timeout.
         """
-        deadline = time.monotonic() + VPN_TIMEOUT
+        started = time.monotonic()
+        deadline = started + VPN_TIMEOUT
+        reported = 0
         while not ready.wait(0.2):
+            waited = int(time.monotonic() - started)
+            if waited >= reported + 5:  # a sign of life every 5 seconds
+                reported = waited
+                log.debug("  still waiting for the tunnel (%d s)", waited)
             if self.stop.is_set():
                 raise Cancelled
             exited = vpn.poll() is not None
@@ -343,6 +364,7 @@ class Session:
                 raise StepError(f"OpenVPN exited with code {vpn.returncode}")
             if time.monotonic() > deadline:
                 raise StepError(f"no connection within {VPN_TIMEOUT:.0f} s")
+        log.debug("tunnel is up after %.1f s", time.monotonic() - started)
 
     @contextmanager
     def vpn_tunnel(self) -> Iterator[Callable[[Profile, str], subprocess.Popen]]:
@@ -387,6 +409,7 @@ class Session:
         address = (target_ip, int(self.settings.port))
         with socket.create_connection(address, timeout=10) as connection:
             banner = connection.recv(256)
+        log.debug("  SSH banner from %s:%d: %r", *address, banner)
         if b"SSH-" not in banner:
             raise StepError("the port is open but does not answer like an SSH server")
 
@@ -417,6 +440,7 @@ class Session:
         if password:
             command += ["-pwfile", password.path]
         command += [f"{self.settings.ssh_user}@{target_ip}", remote_command]
+        log.debug("plink: %s", command)
         process = subprocess.Popen(
             command, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
             stderr=subprocess.PIPE, text=True, errors="replace",
@@ -430,6 +454,8 @@ class Session:
             process.kill()
             process.communicate()
             raise
+        log.debug("plink exit code %s, %d bytes of output, error output: %r",
+                  process.returncode, len(output), errors.strip())
         if process.returncode != 0:
             message = errors.strip() or f"plink exit code {process.returncode}"
             if "host key" in message.lower():
@@ -464,8 +490,10 @@ class Session:
         password = self.ssh_secret()
         if password:
             command += ["-pwfile", password.path]
+        log.debug("PuTTY: %s", command)
         try:
             putty = subprocess.Popen(command)
+            log.debug("PuTTY process id %d", putty.pid)
             if password:
                 password.announce(putty.pid)
             if self.job_assign is not None:
@@ -503,8 +531,9 @@ class Session:
             StepError: If the answer is unusable, or HopToDesk is not installed
                 or not running.
         """
-        values = hoptodesk.parse_probe(
-            self.ssh_command(target_ip, hoptodesk.PROBE_COMMAND))
+        answer = self.ssh_command(target_ip, hoptodesk.PROBE_COMMAND)
+        log.debug("remote probe answer: %r", answer)
+        values = hoptodesk.parse_probe(answer)
         if "processes" not in values:
             raise StepError("no usable answer (this check needs a Linux target)")
         state, _, version = values.get("package", "").partition(" ")
@@ -541,7 +570,10 @@ class Session:
         if self.settings.hoptodesk_port != hoptodesk.DEFAULT_PORT:
             peer = f"{target_ip}:{self.settings.hoptodesk_port}"
         # No password argument: "--password" would change this computer's setting.
-        process = subprocess.Popen([self.settings.hoptodesk_exe, "--connect", peer])
+        command = [self.settings.hoptodesk_exe, "--connect", peer]
+        log.debug("HopToDesk: %s", command)
+        process = subprocess.Popen(command)
+        log.debug("HopToDesk process id %d", process.pid)
         log.info("  Enter the password in HopToDesk.")
         return process
 
@@ -576,6 +608,7 @@ class Session:
         # Programs, profile, name, VPN server, VPN, ping + the client checks.
         self.step_count = 6 + test_ssh + login_test + test_hop
         log.info("--- Test started ---")
+        self.log_start("test")
         try:
             with winapi.single_instance():
                 store.remove_temp_files()

@@ -1,6 +1,7 @@
 """GUI code paths with a stand-in for tkinter (no real widgets are created)."""
 
 import importlib
+import logging
 import sys
 import types
 import unittest
@@ -108,6 +109,19 @@ class GuiTest(unittest.TestCase):
         connection.add_ssh.assert_called_once()
         connection.add_hoptodesk.assert_called_once()
         connection.close_session.assert_called_once_with(3)
+
+    def test_debug_lines_are_marked_in_the_window(self) -> None:
+        handler = gui.QueueHandler()
+        for level, marker in ((logging.DEBUG, "[debug] "), (logging.INFO, "")):
+            record = logging.LogRecord("corridoor", level, "", 0, "hello", (), None)
+            text = handler.format(record)
+            self.assertTrue(text.endswith(f"{marker}hello"), text)
+            self.assertEqual("[debug]" in text, bool(marker))
+
+    def test_log_detail_is_a_field_of_the_form(self) -> None:
+        window = self.window()
+        self.assertEqual(window.variables["log_level"].get(), "info")
+        self.assertEqual(window.current_settings().log_level, "info")
 
     def test_pipe_test_result_is_applied_and_saved(self) -> None:
         window = self.window()

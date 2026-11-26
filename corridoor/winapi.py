@@ -7,6 +7,7 @@ names directly.
 """
 
 import ctypes
+import logging
 import os
 import subprocess
 from contextlib import contextmanager
@@ -14,6 +15,8 @@ from pathlib import Path
 from typing import Callable, Iterator
 
 from .errors import StepError
+
+log = logging.getLogger("corridoor")
 
 CRYPTPROTECT_UI_FORBIDDEN: int = 0x1
 ERROR_ALREADY_EXISTS: int = 183
@@ -98,6 +101,7 @@ def single_instance() -> Iterator[None]:
     kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
     mutex = kernel32.CreateMutexW(None, False, "corridoor_session")
     already_running = ctypes.get_last_error() == ERROR_ALREADY_EXISTS
+    log.debug("session mutex: handle %s, already running: %s", mutex, already_running)
     try:
         if not mutex or already_running:
             raise StepError("another session is already running")
@@ -122,6 +126,7 @@ def exit_event() -> Iterator[tuple[str, Callable[[], None]]]:
     handle = kernel32.CreateEventW(None, True, False, name)  # manual reset, unset
     if not handle:
         raise ctypes.WinError(ctypes.get_last_error())
+    log.debug("exit event %s created", name)
     try:
         yield name, lambda: kernel32.SetEvent(handle)
     finally:
@@ -190,7 +195,10 @@ def kill_on_close_job() -> Iterator[Callable[[subprocess.Popen], None]]:
                 ctypes.sizeof(limits)):
             raise ctypes.WinError(ctypes.get_last_error())
 
+        log.debug("job object created (kill on close)")
+
         def assign(process: subprocess.Popen) -> None:
+            log.debug("process %d added to the job", process.pid)
             # Popen keeps the Windows process handle in this attribute.
             if not kernel32.AssignProcessToJobObject(job, int(process._handle)):
                 error = ctypes.get_last_error()

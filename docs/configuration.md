@@ -60,6 +60,24 @@ cancelled or aborted test changes nothing. There is no automatic fallback later:
 the test again after updating OpenVPN or PuTTY. HopToDesk receives no secrets from
 the launcher.
 
+## Logging
+
+| Setting | Description |
+|---|---|
+| Log detail | `info` (default): steps, results, warnings and the OpenVPN output. `debug`: nearly everything. |
+
+`debug` adds, marked `[debug]` in the window: the settings (passwords shown as `***`),
+Python and Windows versions, every command line that is started (OpenVPN, PuTTY,
+plink, HopToDesk), process ids, job object and mutex events, pipe connections, ping
+output, routing lookups, the SSH banner, the answer of the remote HopToDesk probe,
+the commands to the session list, and the cleanup. Secrets are logged only as a
+length and the path of their file or pipe, never as text.
+
+The level applies as soon as you select **Save**, also to a session that is already
+running. The file `corridoor.log` gets the same detail. Switch back to `info` when
+the problem is solved: the debug log is long, and it contains paths, addresses and
+user names (see [Security](security.md)).
+
 ## Buttons
 
 | Button | Behaviour |

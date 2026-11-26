@@ -1,6 +1,6 @@
 """The user's settings as one plain dataclass."""
 
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 
 from .hoptodesk import DEFAULT_PORT
 
@@ -38,3 +38,17 @@ class Settings:
     pipe_vpn_config: bool = False  # only used together with copy_profile
     pipe_vpn_auth: bool = False
     pipe_ssh: bool = False
+
+    # --- Logging ---
+    log_level: str = "info"        # "info" (default) or "debug" (nearly everything)
+
+    def masked(self) -> dict:
+        """Return the settings as a dict that is safe to write into a log.
+
+        Passwords are replaced by ``***`` (or empty if not set). Nothing else is
+        secret: paths, user names and ports are logged as they are.
+        """
+        values = asdict(self)
+        for name in ("vpn_password", "ssh_password"):
+            values[name] = "***" if values[name] else ""
+        return values

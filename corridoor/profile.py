@@ -5,12 +5,15 @@ the profile and the files it references in :func:`bundle_profile`.
 """
 
 import base64
+import logging
 import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterator, Optional
 
 from .errors import StepError
+
+log = logging.getLogger("corridoor")
 
 # Would reroute all traffic, load a DLL or pull in an unchecked file.
 FORBIDDEN_DIRECTIVES: tuple[str, ...] = (
@@ -105,6 +108,7 @@ def bundle_profile(path: Path) -> str:
                 content = base64.encodebytes(referenced.read_bytes()).decode("ascii")
             else:
                 content = referenced.read_text("utf-8", errors="replace")
+            log.debug("profile: embedding '%s' from %s", name, referenced)
             if name == "tls-auth" and len(words) > 2:
                 output.append(f"key-direction {words[2]}")
             output += [f"<{name}>", content.rstrip("\n"), f"</{name}>"]

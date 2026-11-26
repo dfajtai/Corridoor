@@ -224,6 +224,27 @@ class DisconnectTest(ConnectionTestCase):
         self.assertEqual(connection.state, "up")
 
 
+class DebugLogTest(ConnectionTestCase):
+    """The debug log of a connection shows the details but no password."""
+
+    def test_debug_log_has_details_and_no_password(self) -> None:
+        settings = replace(self.settings, vpn_password="VPNsecret123",
+                           ssh_password="SSHsecret456", log_level="debug")
+        store.save_settings(settings)
+        connection = self.start(settings=settings)
+        connection.add_ssh()
+        self.wait_until(lambda: len(self.numbers()) == 2)
+        connection.close_session(1)
+        self.wait_until(lambda: self.numbers() == [2])
+        self.disconnect()
+        text = self.log_text()
+        for expected in ("command: add ssh", "PuTTY:", "closing SSH #1",
+                         "sessions now:"):
+            self.assertIn(expected, text)
+        self.assertNotIn("VPNsecret123", text)
+        self.assertNotIn("SSHsecret456", text)
+
+
 class SecretsTest(ConnectionTestCase):
     """Passwords are removed early and never left behind."""
 

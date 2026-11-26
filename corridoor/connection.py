@@ -137,6 +137,8 @@ class Connection:
         session = self.session
         session.step_number, session.step_count = 0, 4
         log.info("--- Connection started ---")
+        session.log_start("connection")
+        log.debug("first session: %s", first_client)
         try:
             with winapi.single_instance():
                 store.remove_temp_files()
@@ -195,6 +197,7 @@ class Connection:
                 command, argument = self._commands.get_nowait()
             except queue.Empty:
                 return
+            log.debug("command: %s %s", command, argument)
             if command == "add":
                 self._add(str(argument))
             else:
@@ -203,6 +206,7 @@ class Connection:
     def _add(self, kind: str) -> None:
         """Start a client session if the limits and the programs allow it."""
         if not self._allowed(kind):
+            log.debug("not allowed: sessions now %s", self.sessions())
             log.warning("Cannot add another %s session.",
                         "HopToDesk" if kind == HOPTODESK else "SSH")
             return
@@ -223,6 +227,7 @@ class Connection:
         with self._lock:
             self._clients.append(client)
         log.info("%s started.", client.title)
+        log.debug("sessions now: %s", self.sessions())
 
     def _allowed(self, kind: str) -> bool:
         """Check the settings and the limits for a new session of this kind."""
@@ -246,6 +251,8 @@ class Connection:
                 # A temporary file is removed early; a pipe only serves PuTTY.
                 client.password.release()
                 client.password_deleted = True
+                log.debug("%s: password file deleted after %.0f s", client.title,
+                          PWFILE_LIFETIME)
 
     def _close(self, number: int) -> None:
         """Close one session on request; the VPN is not touched."""
@@ -254,6 +261,7 @@ class Connection:
         if not matches:
             return
         client = matches[0]
+        log.debug("closing %s (process id %d)", client.title, client.process.pid)
         if client.kind == SSH and client.process.poll() is None:
             client.process.terminate()
             try:

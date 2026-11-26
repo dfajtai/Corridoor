@@ -1,6 +1,8 @@
 # Troubleshooting
 
 Start with **Diagnostics** in the settings window; the log names the failing check.
+If that is not enough, set **Log detail** to `debug` (see [Configuration](configuration.md#logging)),
+save, and repeat the action.
 The file `C:\Program Files\Corridoor\corridoor.log` keeps the history.
 
 | Symptom | What to check |

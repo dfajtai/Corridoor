@@ -1,9 +1,12 @@
 """Small network probes that do not need a session."""
 
+import logging
 import socket
 import subprocess
 
 from . import winapi
+
+log = logging.getLogger("corridoor")
 
 
 def ping(address: str) -> bool:
@@ -19,7 +22,10 @@ def ping(address: str) -> bool:
             errors="replace", timeout=15, creationflags=winapi.NO_WINDOW,
         )
     except subprocess.TimeoutExpired:
+        log.debug("ping %s: timed out", address)
         return False
+    log.debug("ping %s: exit code %s, output %r", address, result.returncode,
+              result.stdout.strip())
     return "TTL=" in result.stdout.upper()
 
 
@@ -31,4 +37,6 @@ def source_address(target_ip: str, port: int) -> str:
     """
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
         probe.connect((target_ip, port))
-        return probe.getsockname()[0]
+        address = probe.getsockname()[0]
+    log.debug("route to %s uses local address %s", target_ip, address)
+    return address

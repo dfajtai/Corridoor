@@ -80,6 +80,7 @@ class SecretPipe:
         self._attributes = SecurityAttributes(
             ctypes.sizeof(SecurityAttributes), descriptor, False)
 
+        log.debug("pipe %s created", self.path)
         first = self._create_instance(first=True)
         self._thread = threading.Thread(target=self._serve, args=(first,), daemon=True)
         self._thread.start()
@@ -124,6 +125,8 @@ class SecretPipe:
                 break
             client = wintypes.DWORD()
             self._kernel32.GetNamedPipeClientProcessId(handle, ctypes.byref(client))
+            log.debug("pipe %s: client process %d, allowed %s", self.path,
+                      client.value, self._allowed_pid)
             following = self._create_instance(first=False)
             if client.value == self._allowed_pid:
                 written = wintypes.DWORD()
@@ -132,6 +135,8 @@ class SecretPipe:
                 self._kernel32.FlushFileBuffers(handle)  # wait for the reader
                 if ok and written.value == len(self._data):
                     self.delivered = True
+                log.debug("pipe %s: wrote %d of %d bytes", self.path,
+                          written.value, len(self._data))
             else:
                 log.warning("Pipe access by unexpected process %d refused.",
                             client.value)

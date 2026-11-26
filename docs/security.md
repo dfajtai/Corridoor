@@ -29,6 +29,8 @@ Leftover temporary files from a killed session are removed at the next start.
 - Keep the client programs, the key file, a non-copied profile and the build folder
   in locations that untrusted users or programs cannot modify.
 - Review exported logs before sharing them; they contain addresses and server names.
+  The `debug` level also lists command lines, file paths and user names. Passwords
+  are never written to the log, at any level.
 
 ## Limitations
 

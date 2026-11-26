@@ -30,7 +30,18 @@ SETTINGS_FILE: Path = SECRET_DIR / "settings.bin"
 PROFILE_FILE: Path = SECRET_DIR / "profile.bin"
 LOG_FILE: Path = SECRET_DIR / "corridoor.log"
 
+# Names the user can choose; "debug" prints nearly everything (never passwords).
+LOG_LEVELS: dict[str, int] = {"info": logging.INFO, "debug": logging.DEBUG}
+
 log: logging.Logger = logging.getLogger("corridoor")
+
+
+def apply_log_level(name: str) -> None:
+    """Set the detail of the log (window and file); unknown names mean ``info``.
+
+    Takes effect at once, also for a session that is already running.
+    """
+    log.setLevel(LOG_LEVELS.get(str(name).lower(), logging.INFO))
 
 
 def prepare_storage() -> None:
@@ -43,6 +54,7 @@ def prepare_storage() -> None:
         OSError, subprocess.CalledProcessError: If the folder cannot be secured.
     """
     SECRET_DIR.mkdir(exist_ok=True)
+    log.debug("securing %s", SECRET_DIR)
     icacls = winapi.system32("icacls.exe")
     admins, system = "*S-1-5-32-544", "*S-1-5-18"  # language independent SIDs
     for options in (
@@ -57,7 +69,7 @@ def prepare_storage() -> None:
                                   encoding="utf-8")
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     log.addHandler(handler)
-    log.setLevel(logging.INFO)
+    apply_log_level("info")  # the saved level is applied after the settings load
 
 
 def remove_temp_files() -> None:
@@ -76,7 +88,9 @@ def load_settings() -> Optional[Settings]:
         return None
     stored = json.loads(winapi.dpapi(SETTINGS_FILE.read_bytes(), encrypt=False))
     known = {field.name for field in fields(Settings)}
-    return Settings(**{key: value for key, value in stored.items() if key in known})
+    settings = Settings(**{key: value for key, value in stored.items() if key in known})
+    apply_log_level(settings.log_level)
+    return settings
 
 
 def save_settings(settings: Settings) -> None:
@@ -105,7 +119,9 @@ def save_settings(settings: Settings) -> None:
         PROFILE_FILE.unlink(missing_ok=True)
     raw = json.dumps(asdict(settings)).encode("utf-8")
     SETTINGS_FILE.write_bytes(winapi.dpapi(raw, encrypt=True))
+    apply_log_level(settings.log_level)
     log.info("Settings saved.")
+    log.debug("Settings: %s", settings.masked())
 
 
 def load_profile(settings: Settings) -> Profile:
@@ -119,6 +135,8 @@ def load_profile(settings: Settings) -> Profile:
         OSError: If the profile cannot be read.
     """
     path: Optional[Path] = None
+    log.debug("loading the profile from %s",
+              "the encrypted store" if settings.copy_profile else settings.profile_file)
     if settings.copy_profile:
         text = winapi.dpapi(PROFILE_FILE.read_bytes(), encrypt=False).decode("utf-8")
     else:

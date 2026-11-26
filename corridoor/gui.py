@@ -24,7 +24,10 @@ from .settings import Settings
 
 log = logging.getLogger("corridoor")
 
-# (field name, label, kind); kinds: text, secret, file, check, header
+# Choices of the "Log detail" field, from the least to the most detailed.
+LOG_CHOICES: list[str] = list(store.LOG_LEVELS)
+
+# (field name, label, kind); kinds: text, secret, file, check, choice, header
 FIELDS: list[tuple[str, str, str]] = [
     ("", "VPN", "header"),
     ("profile_file", "OpenVPN profile", "file"),
@@ -48,6 +51,8 @@ FIELDS: list[tuple[str, str, str]] = [
     ("pipe_vpn_config", "VPN profile via pipe (copied profile only)", "check"),
     ("pipe_vpn_auth", "VPN credentials via pipe", "check"),
     ("pipe_ssh", "SSH password via pipe", "check"),
+    ("", "Logging", "header"),
+    ("log_level", "Log detail (info, or debug: nearly everything)", "choice"),
 ]
 
 
@@ -59,6 +64,14 @@ class QueueHandler(logging.Handler):
         super().__init__()
         self.messages: "queue.Queue[str]" = queue.Queue()
         self.setFormatter(logging.Formatter("%(asctime)s %(message)s", "%H:%M:%S"))
+
+    def format(self, record: logging.LogRecord) -> str:
+        """Format a record; debug lines get a ``[debug]`` marker after the time."""
+        text = super().format(record)
+        if record.levelno <= logging.DEBUG:
+            time_part, _, rest = text.partition(" ")
+            text = f"{time_part} [debug] {rest}"
+        return text
 
     def emit(self, record: logging.LogRecord) -> None:
         """Queue the formatted record."""
@@ -149,9 +162,14 @@ class ConfigWindow(LogWindow):
                 variable = tk.StringVar(value=values[name])
                 ttk.Label(self, text=label).grid(row=row, column=0, sticky="w",
                                                  padx=(0, 8))
-                ttk.Entry(self, textvariable=variable,
-                          show="*" if kind == "secret" else ""
-                          ).grid(row=row, column=1, sticky="ew", pady=1)
+                if kind == "choice":
+                    ttk.Combobox(self, textvariable=variable, values=LOG_CHOICES,
+                                 state="readonly", width=10
+                                 ).grid(row=row, column=1, sticky="w", pady=1)
+                else:
+                    ttk.Entry(self, textvariable=variable,
+                              show="*" if kind == "secret" else ""
+                              ).grid(row=row, column=1, sticky="ew", pady=1)
             if kind == "file":
                 ttk.Button(self, text="...", width=3,
                            command=lambda v=variable: self.browse(v)
