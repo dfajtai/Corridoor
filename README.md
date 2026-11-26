@@ -13,6 +13,38 @@ traffic addressed to that host uses the VPN; everything else keeps its normal ro
 > Object and the build and install scripts have not been verified separately.
 > See [tested versions](docs/windows-setup.md#tested-versions).
 
+## Install in 5 minutes
+
+### Checklist: what must be on the computer
+
+- [ ] Windows 10/11, 64-bit, and an administrator account
+- [ ] [OpenVPN **Community**](https://openvpn.net/community-downloads/) 2.7 (not OpenVPN Connect)
+- [ ] [PuTTY](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html) (`putty.exe` and `plink.exe`) and/or [HopToDesk](https://www.hoptodesk.com/download) 1.46.90+
+- [ ] [Python](https://www.python.org/downloads/windows/) 3.10 to 3.14, 64-bit, with **Add to PATH** and **tcl/tk**
+- [ ] [Poetry](https://python-poetry.org/docs/#installation) 2.2+
+- [ ] [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with **Desktop development with C++**
+- [ ] The `.ovpn` profile (and VPN user/password if it asks) and the remote computer's internal IP
+- [ ] The remote computer is ready: [remote setup](docs/remote-setup.md)
+
+### Install
+
+In a **regular** PowerShell window in the repository folder:
+
+```powershell
+poetry install
+poetry run powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
+```
+
+Then, in an **elevated** PowerShell window in the same folder:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+Then open **Corridoor Settings** (desktop shortcut), fill in the profile, VPN login
+and remote host, select **Save & test**, and start **Corridoor SSH** or
+**Corridoor HopToDesk**. Details: [Windows setup](docs/windows-setup.md).
+
 ## Features
 
 - **Single-host split tunnel:** routes pushed by the server are ignored.
@@ -31,27 +63,6 @@ traffic addressed to that host uses the VPN; everything else keeps its normal ro
 2. The launcher waits for `Initialization Sequence Completed`.
 3. It starts PuTTY or HopToDesk against the target address.
 4. It stops OpenVPN when the session is over.
-
-## Quick start
-
-You need an OpenVPN server that reaches the remote computer, its `.ovpn` profile,
-Windows with OpenVPN Community, PuTTY and/or HopToDesk, and Python 3.10 to 3.14 with
-Poetry and the Visual Studio C++ Build Tools for the build.
-
-```powershell
-poetry install
-poetry run powershell -NoProfile -ExecutionPolicy Bypass -File .\build.ps1
-```
-
-Then, in an **elevated** PowerShell window:
-
-```powershell
-powershell -ExecutionPolicy Bypass -File .\install.ps1
-```
-
-Open **Corridoor Settings**, fill in the profile, VPN login and remote host, select
-**Save & test**, then start **Corridoor SSH** or **Corridoor HopToDesk**. Without a
-build: `python .\main.py --config` in an elevated window.
 
 ## Documentation
 
