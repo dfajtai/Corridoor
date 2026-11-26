@@ -11,7 +11,7 @@ if ($LASTEXITCODE -ne 0) { throw "Icon generation failed." }
 
 python -m nuitka --mode=standalone --windows-uac-admin --windows-console-mode=disable `
     --enable-plugin=tk-inter --assume-yes-for-downloads `
-    --windows-icon-from-ico=run.ico --output-filename=corridoor.exe corridoor.py
+    --windows-icon-from-ico=run.ico --output-filename=corridoor.exe main.py
 if ($LASTEXITCODE -ne 0) { throw "Nuitka build failed." }
 
 Copy-Item run.ico, hop.ico, config.ico $dist

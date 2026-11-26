@@ -1,4 +1,13 @@
-"""Tkinter windows: the settings editor and the small status window."""
+"""Tkinter windows: the settings editor and the small status window.
+
+Both windows derive from :class:`LogWindow`, which shows the ``corridoor`` log in
+a text box and runs one :class:`~corridoor.session.Session` job at a time on a
+background thread. Tk is not thread safe, so the worker only logs; the GUI
+thread moves the records into the widget every 200 ms (:meth:`LogWindow.poll`).
+
+* :class:`ConfigWindow`  edit the settings, save, test, diagnose, pipe test
+* :class:`RunWindow`     connect at once and close after a successful session
+"""
 
 import logging
 import queue
@@ -8,7 +17,11 @@ from dataclasses import asdict
 from tkinter import filedialog, messagebox, scrolledtext, ttk
 from typing import Callable, Optional
 
-import corridoor_core as core
+from . import store
+from .session import Session
+from .settings import Settings
+
+log = logging.getLogger("corridoor")
 
 # (field name, label, kind); kinds: text, secret, file, check, header
 FIELDS: list[tuple[str, str, str]] = [
@@ -72,7 +85,7 @@ class LogWindow(ttk.Frame):
         self.text.grid(row=log_row, column=0, columnspan=3, sticky="nsew")
 
         self.handler = QueueHandler()
-        core.log.addHandler(self.handler)
+        log.addHandler(self.handler)
         root.protocol("WM_DELETE_WINDOW", self.close)
         self.poll()
 
@@ -80,13 +93,13 @@ class LogWindow(ttk.Frame):
         """Return True while a session thread is alive."""
         return self.worker is not None and self.worker.is_alive()
 
-    def start_session(self, settings: core.Settings,
-                      job: Callable[[core.Session], bool]) -> None:
+    def start_session(self, settings: Settings,
+                      job: Callable[[Session], bool]) -> None:
         """Run ``job`` with a new session in a background thread."""
         self.stop.clear()
 
         def work() -> None:
-            self.success = job(core.Session(settings, self.stop))
+            self.success = job(Session(settings, self.stop))
 
         self.worker = threading.Thread(target=work)
         self.worker.start()
@@ -116,7 +129,7 @@ class LogWindow(ttk.Frame):
 class ConfigWindow(LogWindow):
     """Edit, save and test the settings."""
 
-    def __init__(self, root: tk.Tk, settings: core.Settings) -> None:
+    def __init__(self, root: tk.Tk, settings: Settings) -> None:
         """Build the form and fill it with the given settings."""
         super().__init__(root, log_row=len(FIELDS) + 1, log_height=8)
         values = asdict(settings)
@@ -169,12 +182,12 @@ class ConfigWindow(LogWindow):
         if path:
             variable.set(path)
 
-    def current_settings(self) -> core.Settings:
+    def current_settings(self) -> Settings:
         """Collect the content of the form."""
-        return core.Settings(
+        return Settings(
             **{name: var.get() for name, var in self.variables.items()})
 
-    def save(self) -> Optional[core.Settings]:
+    def save(self) -> Optional[Settings]:
         """Validate and store the form; return the settings on success."""
         settings = self.current_settings()
         def valid(port: str) -> bool:
@@ -193,9 +206,9 @@ class ConfigWindow(LogWindow):
             messagebox.showwarning("Check the settings", problem)
             return None
         try:
-            core.save_settings(settings)
+            store.save_settings(settings)
         except Exception as error:  # show every failure, there is no console
-            core.log.error("Saving failed: %s", error)
+            log.error("Saving failed: %s", error)
             messagebox.showerror("Saving failed", str(error))
             return None
         return settings
@@ -206,11 +219,11 @@ class ConfigWindow(LogWindow):
 
     def diagnose(self) -> None:
         """Save, then run all diagnostic checks and print a summary."""
-        self.launch(self.diagnose_button, core.Session.diagnose)
+        self.launch(self.diagnose_button, Session.diagnose)
 
     def pipe_test(self) -> None:
         """Save, then test the named pipes; working ones get switched on."""
-        def job(session: core.Session) -> bool:
+        def job(session: Session) -> bool:
             self.pipe_results = session.pipe_test()
             return self.pipe_results is not None
 
@@ -224,10 +237,10 @@ class ConfigWindow(LogWindow):
         for name, works in results.items():
             self.variables[name].set(works)
         if self.save() is not None:
-            core.log.info("The working pipes are now switched on and saved.")
+            log.info("The working pipes are now switched on and saved.")
 
     def launch(self, button: ttk.Button,
-               job: Callable[[core.Session], bool]) -> None:
+               job: Callable[[Session], bool]) -> None:
         """Start a job, or cancel the running one."""
         if self.running():
             self.stop.set()
@@ -270,7 +283,7 @@ class ConfigWindow(LogWindow):
 class RunWindow(LogWindow):
     """Normal mode: connect immediately and close after a successful session."""
 
-    def __init__(self, root: tk.Tk, settings: core.Settings, client: str) -> None:
+    def __init__(self, root: tk.Tk, settings: Settings, client: str) -> None:
         """Create the window and connect with the given client."""
         super().__init__(root, log_row=0)
         self.button = ttk.Button(self, text="Disconnect", command=self.close)
