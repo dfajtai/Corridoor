@@ -148,7 +148,7 @@ class ConfigWindow(LogWindow):
         buttons.grid(row=len(FIELDS), column=0, columnspan=3, pady=8, sticky="e")
         self.save_button = ttk.Button(buttons, text="Save", command=self.save)
         self.save_button.pack(side="left", padx=4)
-        self.test_button = ttk.Button(buttons, text="Save && test", command=self.test)
+        self.test_button = ttk.Button(buttons, text="Save & test", command=self.test)
         self.test_button.pack(side="left")
         self.diagnose_button = ttk.Button(buttons, text="Diagnostics",
                                           command=self.diagnose)
@@ -258,7 +258,7 @@ class ConfigWindow(LogWindow):
         if not running:
             self.apply_pipe_results()
         self.save_button.configure(state="disabled" if running else "normal")
-        for button, label in ((self.test_button, "Save && test"),
+        for button, label in ((self.test_button, "Save & test"),
                               (self.diagnose_button, "Diagnostics"),
                               (self.pipe_button, "Pipe test")):
             active = running and button is self.active_button
