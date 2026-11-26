@@ -12,10 +12,10 @@ import sys
 import tkinter as tk
 from tkinter import messagebox
 
-from corridoor import gui, store, winapi
+from corridoor import gui, store, version, winapi
 from corridoor.settings import Settings
 
-TITLE: str = "Corridoor"
+TITLE: str = version.title()  # "Corridoor 0.2.ab12cd3"
 
 
 def main() -> int:
@@ -25,6 +25,7 @@ def main() -> int:
         The process exit code: 0 after a normal run, 1 after a fatal error.
     """
     parser = argparse.ArgumentParser(description=TITLE)
+    parser.add_argument("--version", action="version", version=TITLE)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--config", action="store_true", help="open the settings")
     mode.add_argument("--hoptodesk", action="store_true",
@@ -49,6 +50,7 @@ def main() -> int:
     except Exception as error:
         return fail(f"Cannot prepare the secure folder: {error}")
 
+    store.log.info(TITLE)  # first line of every log, also of exported logs
     config_mode: bool = args.config
     try:
         settings = store.load_settings()
@@ -59,7 +61,7 @@ def main() -> int:
 
     # Without saved settings there is nothing to run, so configure first.
     if config_mode or settings is None:
-        root.title(f"{TITLE} - settings")
+        root.title(version.title("settings"))
         gui.ConfigWindow(root, settings or Settings())
     else:
         gui.HubWindow(root, settings, "hoptodesk" if args.hoptodesk else "ssh")

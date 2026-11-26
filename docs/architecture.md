@@ -8,6 +8,7 @@ from modules listed above it.
 | `main.py` | entry point: checks the environment, opens the window of the requested mode |
 | `corridoor/errors.py` | `StepError` (a step failed) and `Cancelled` (the user stopped) |
 | `corridoor/winapi.py` | **the only code that talks to Windows**: DPAPI, mutex, exit event, job object |
+| `corridoor/version.py` | the version `<VERSION>.<commit id>` and the window title |
 | `corridoor/hoptodesk.py` | HopToDesk port, minimum version, the remote probe and its parser |
 | `corridoor/settings.py` | the `Settings` dataclass |
 | `corridoor/profile.py` | pure `.ovpn` text handling: parse, check, bundle, list the servers |
@@ -54,6 +55,16 @@ The GUI never calls the logic directly from the Tk thread. A job runs on a
 background thread and reports only through the `corridoor` logger; the GUI moves
 the log records into its text box with a queue.
 
+## Version
+
+`VERSION` (tracked) holds the base, for example `0.2`; it changes only on request.
+The commit id cannot be part of the commit it names, so `githooks/post-commit`
+writes `corridoor/_version.py` (`__version__ = "0.2.ab12cd3"`) *after* each commit,
+and `build.ps1` writes it before a build. That file is listed in `.gitignore`, so the
+working tree stays clean. Without it, `version.get_version()` returns `0.2.dev`.
+`githooks/install.ps1` enables the hook (`core.hooksPath`), because `.git/hooks`
+is not cloned.
+
 ## Design rules
 
 - **Windows code stays in `winapi.py`.** Other modules call `winapi.name(...)`
@@ -85,6 +96,7 @@ They run on any operating system. `tests/support.py` builds the environment:
 
 | File | Covers |
 |---|---|
+| `test_version.py` | version module and the post-commit hook (run in a throw-away repository) |
 | `test_profile.py` | profile parsing, checking, bundling; HopToDesk helpers |
 | `test_store.py` | settings round trip, profile copy, leftovers |
 | `test_session.py` | connection test, HopToDesk checks, diagnostics, remote probe |

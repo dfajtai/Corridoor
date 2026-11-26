@@ -83,7 +83,15 @@ and remote host, select **Save & test**, and start **Corridoor SSH** or
 
 ```powershell
 python -m unittest discover -s tests -t .
+githooks\install.ps1
 ```
+
+The second command (once per clone) enables the git hook that keeps the version
+current. The version is `0.2.<commit id>`: the base `0.2` is the first line of the
+`VERSION` file and changes only on request, the commit id is written by the
+post-commit hook (and by `build.ps1`) into the untracked file
+`corridoor/_version.py`. It is shown in every window title, in the first log line
+and by `corridoor.exe --version`.
 
 The tests run on any system: Windows APIs and the external programs are replaced
 by stand-ins, so they do not replace a test on a real Windows machine.

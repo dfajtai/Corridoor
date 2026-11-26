@@ -1,6 +1,6 @@
 [project]
 name = "corridoor"
-version = "0.1.0"
+version = "0.2"
 description = "Windows launcher: OpenVPN split tunnel to a single host, then PuTTY SSH or HopToDesk."
 readme = "README.md"
 license = "MIT"
