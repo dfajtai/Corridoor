@@ -3,7 +3,7 @@
 *One corridor, one door.*
 
 A lightweight Windows launcher that brings up an OpenVPN **split tunnel** to a
-single host and then opens SSH (PuTTY) and HopToDesk sessions to it. Only the
+single host and then opens SSH (PuTTY), HopToDesk and file transfer (FileZilla) sessions to it. Only the
 traffic addressed to that host uses the VPN; everything else keeps its normal route.
 One corridor, one door, as many rooms behind it as you need: several sessions share
 the one VPN connection.
@@ -21,7 +21,7 @@ the one VPN connection.
 
 - [ ] Windows 10/11, 64-bit, and an administrator account
 - [ ] [OpenVPN **Community**](https://openvpn.net/community-downloads/) 2.7 (not OpenVPN Connect)
-- [ ] [PuTTY](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html) (`putty.exe` and `plink.exe`) and/or [HopToDesk](https://www.hoptodesk.com/download) 1.46.90+
+- [ ] [PuTTY](https://www.chiark.greenend.org.uk/~sgtatham/putty/latest.html) (`putty.exe` and `plink.exe`), [HopToDesk](https://www.hoptodesk.com/download) 1.46.90+ and/or [FileZilla](https://filezilla-project.org/) (as many as you want to use)
 - [ ] [Python](https://www.python.org/downloads/windows/) 3.10 to 3.14, 64-bit, with **Add to PATH** and **tcl/tk**
 - [ ] [Poetry](https://python-poetry.org/docs/#installation) 2.2+
 - [ ] [Visual Studio Build Tools](https://visualstudio.microsoft.com/visual-cpp-build-tools/) with **Desktop development with C++**
@@ -44,14 +44,15 @@ powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
 Then open **Corridoor Settings** (desktop shortcut), fill in the profile, VPN login
-and remote host, select **Save & test**, and start **Corridoor SSH** or
+and remote host, select **Quick test**, and start **Corridoor SSH** or
 **Corridoor HopToDesk**. Details: [Windows setup](docs/windows-setup.md).
 
 ## Features
 
 - **Single-host split tunnel:** routes pushed by the server are ignored.
-- **Several sessions on one VPN:** add any number of SSH (PuTTY) windows and one
-  HopToDesk session to the list, and close each on its own. Disconnecting closes all.
+- **Several sessions on one VPN:** add SSH (PuTTY) windows, one HopToDesk session and
+  one file transfer session (FileZilla, SFTP) to a list, and close each on its own.
+  Disconnecting closes all.
 - **Settings window** with a step-by-step connection test and full diagnostics.
 - **Encrypted storage:** settings, passwords and the profile copy are protected
   with Windows DPAPI in an administrator-only folder.

@@ -25,6 +25,7 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Callable, Iterator, NamedTuple, Optional
+from urllib.parse import quote
 
 from . import hoptodesk, net, store, winapi
 from .errors import Cancelled, StepError
@@ -193,14 +194,15 @@ class Session:
     def enabled_clients(self) -> tuple[str, ...]:
         """Return the clients switched on in the settings."""
         choices = (("ssh", self.settings.use_ssh),
-                   ("hoptodesk", self.settings.use_hoptodesk))
+                   ("hoptodesk", self.settings.use_hoptodesk),
+                   ("filezilla", self.settings.use_filezilla))
         return tuple(name for name, enabled in choices if enabled)
 
     def check_programs(self, clients: tuple[str, ...]) -> None:
         """Verify that OpenVPN and the executables of the clients exist.
 
         Args:
-            clients: Any of ``"ssh"`` and ``"hoptodesk"``.
+            clients: Any of ``"ssh"``, ``"hoptodesk"`` and ``"filezilla"``.
         """
         programs = [Path(self.settings.openvpn_exe)]
         if "ssh" in clients:
@@ -210,6 +212,8 @@ class Session:
                 programs.append(Path(self.settings.ssh_key))
         if "hoptodesk" in clients:
             programs.append(Path(self.settings.hoptodesk_exe))
+        if "filezilla" in clients:
+            programs.append(Path(self.settings.filezilla_exe))
         for program in programs:
             log.debug("  checking %s", program)
             if not program.is_file():
@@ -504,6 +508,28 @@ class Session:
             raise
         return putty, password
 
+    # --- FileZilla ---
+
+    def launch_filezilla(self, target_ip: str) -> subprocess.Popen:
+        """Open FileZilla on ``sftp://[user@]target:port`` (no password given).
+
+        FileZilla asks for the password itself (``-l interactive``), so it never
+        appears on a command line. FileZilla usually hands the request over to
+        an already running instance and exits, so, like HopToDesk, the process
+        is neither put into the job nor watched.
+
+        Raises:
+            OSError: If FileZilla cannot be started.
+        """
+        login = f"{quote(self.settings.ssh_user, safe='')}@" if self.settings.ssh_user else ""
+        url = f"sftp://{login}{target_ip}:{self.settings.port}"
+        command = [self.settings.filezilla_exe, "-l", "interactive", url]
+        log.debug("FileZilla: %s", command)
+        process = subprocess.Popen(command)
+        log.debug("FileZilla process id %d", process.pid)
+        log.info("  Enter the password in FileZilla.")
+        return process
+
     # --- HopToDesk ---
 
     def check_hoptodesk_port(self, target_ip: str) -> None:
@@ -602,11 +628,13 @@ class Session:
         """
         clients = self.enabled_clients()
         test_ssh = "ssh" in clients
+        # FileZilla talks SFTP through the SSH port, so it needs the port test too.
+        test_port = test_ssh or "filezilla" in clients
         login_test = test_ssh and bool(self.settings.ssh_user)
         test_hop = "hoptodesk" in clients
         self.step_number = 0
         # Programs, profile, name, VPN server, VPN, ping + the client checks.
-        self.step_count = 6 + test_ssh + login_test + test_hop
+        self.step_count = 6 + test_port + login_test + test_hop
         log.info("--- Test started ---")
         self.log_start("test")
         try:
@@ -626,9 +654,10 @@ class Session:
                         connect(profile, target_ip)
                     with self.step(f"Pinging {target_ip} through the VPN"):
                         self.ping_target(target_ip)
-                    if test_ssh:
+                    if test_port:
                         with self.step(f"Reaching SSH port {self.settings.port}"):
                             self.check_ssh_port(target_ip)
+                    if test_ssh:
                         if login_test:
                             with self.step("Testing the SSH login"):
                                 self.check_login(target_ip)

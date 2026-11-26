@@ -19,7 +19,7 @@ from modules listed above it.
 | `corridoor/connection.py` | `Connection`: the tunnel plus the list of client sessions |
 | `corridoor/diagnose.py` | the full diagnostics run, built on `Session` |
 | `corridoor/pipetest.py` | the named pipe self-test, built on `Session` |
-| `corridoor/gui.py` | Tkinter windows: `ConfigWindow` and `HubWindow` |
+| `corridoor/gui.py` | Tkinter windows: `ConfigWindow` (tabs; actions in three boxes: settings, checks, pipes) and `HubWindow` |
 
 ## Data flow of a connection
 
@@ -40,7 +40,9 @@ is held while a process is started or stopped.
 
 ## Sessions on one connection
 
-- Any number of SSH sessions (`MAX_SSH`, 10) and at most one HopToDesk session.
+- Up to `MAX_SSH` (10) SSH sessions, at most one HopToDesk session and at most one
+  file transfer session (FileZilla, `sftp://user@host:port`, started with
+  `-l interactive`, so it asks for the password itself).
 - Every PuTTY window has its own password secret (file or pipe), released when
   that window closes. A password *file* is also deleted after 10 seconds.
 - Closing a session never touches the VPN. **Disconnect** closes every session,
@@ -49,7 +51,7 @@ is held while a process is started or stopped.
   of the launcher ends them too. This is crash protection only; the normal close
   is an explicit `terminate()`. HopToDesk is not in the job, because it may hand
   the request over to an already running instance, so it is only listed and
-  removed from the list, never killed.
+  removed from the list, never killed. FileZilla is treated the same way.
 
 The GUI never calls the logic directly from the Tk thread. A job runs on a
 background thread and reports only through the `corridoor` logger; the GUI moves

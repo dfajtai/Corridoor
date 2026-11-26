@@ -114,9 +114,11 @@ def run(session: "Session") -> bool:
                 check("Route through VPN", route_after, ("vpn",))
                 check("Ping through VPN",
                       lambda: session.ping_target(values["target"]), ("vpn",))
-                if "ssh" in clients:
+                if "ssh" in clients or "filezilla" in clients:
+                    # FileZilla uses SFTP through the SSH port.
                     check("SSH port",
                           lambda: session.check_ssh_port(values["target"]), ("vpn",))
+                if "ssh" in clients:
                     if settings.ssh_user:
                         check("SSH login", login, ("vpn",))
                 if "hoptodesk" in clients:

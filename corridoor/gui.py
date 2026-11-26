@@ -1,11 +1,13 @@
-"""Tkinter windows: the settings editor and the small status window.
+"""Tkinter windows: the settings editor and the connection window.
 
 Both windows derive from :class:`LogWindow`, which shows the ``corridoor`` log in
 a text box and runs one :class:`~corridoor.session.Session` job at a time on a
 background thread. Tk is not thread safe, so the worker only logs; the GUI
 thread moves the records into the widget every 200 ms (:meth:`LogWindow.poll`).
 
-* :class:`ConfigWindow`  edit the settings, save, test, diagnose, pipe test
+* :class:`ConfigWindow`  tabs to edit the settings; below them three clearly
+  separated actions: **store** the settings, **check** the connection, and
+  **try the pipes** (a way to hand secrets to programs, see the Advanced tab)
 * :class:`HubWindow`     one VPN connection with a list of client sessions
 """
 
@@ -27,33 +29,62 @@ log = logging.getLogger("corridoor")
 # Choices of the "Log detail" field, from the least to the most detailed.
 LOG_CHOICES: list[str] = list(store.LOG_LEVELS)
 
-# (field name, label, kind); kinds: text, secret, file, check, choice, header
-FIELDS: list[tuple[str, str, str]] = [
-    ("", "VPN", "header"),
-    ("profile_file", "OpenVPN profile", "file"),
-    ("copy_profile", "Copy the profile (with keys) into the encrypted store", "check"),
-    ("vpn_user", "VPN user", "text"),
-    ("vpn_password", "VPN password", "secret"),
-    ("openvpn_exe", "openvpn.exe", "file"),
-    ("host", "Remote host (inside VPN)", "text"),
-    ("", "SSH (PuTTY)", "header"),
-    ("use_ssh", "Use SSH", "check"),
-    ("port", "SSH port", "text"),
-    ("ssh_user", "SSH user", "text"),
-    ("ssh_password", "SSH password", "secret"),
-    ("ssh_key", "SSH key .ppk (optional)", "file"),
-    ("putty_exe", "putty.exe", "file"),
-    ("", "HopToDesk (direct IP)", "header"),
-    ("use_hoptodesk", "Use HopToDesk", "check"),
-    ("hoptodesk_port", "Direct IP port", "text"),
-    ("hoptodesk_exe", "hoptodesk.exe", "file"),
-    ("", "Test features (named pipes instead of temporary files)", "header"),
-    ("pipe_vpn_config", "VPN profile via pipe (copied profile only)", "check"),
-    ("pipe_vpn_auth", "VPN credentials via pipe", "check"),
-    ("pipe_ssh", "SSH password via pipe", "check"),
-    ("", "Logging", "header"),
-    ("log_level", "Log detail (info, or debug: nearly everything)", "choice"),
+# One tab: (title, introduction, fields). A field is (name, label, kind) with
+# kind one of: text, secret, file, check, choice, header, note. ``header`` and
+# ``note`` show text only (a bold title / an explanation) and have no name.
+Field = tuple[str, str, str]
+TABS: list[tuple[str, str, list[Field]]] = [
+    ("VPN", "The OpenVPN connection. Only the remote host below is sent through "
+            "it; everything else keeps its normal route.", [
+        ("profile_file", "OpenVPN profile", "file"),
+        ("copy_profile", "Keep an encrypted copy of the profile (with keys)", "check"),
+        ("vpn_user", "VPN user", "text"),
+        ("vpn_password", "VPN password", "secret"),
+        ("", "Leave the user empty if the profile logs in with a certificate only.",
+         "note"),
+        ("openvpn_exe", "openvpn.exe", "file"),
+        ("host", "Remote host (inside the VPN)", "text"),
+    ]),
+    ("SSH", "A PuTTY window on the remote host. You can open several at once.", [
+        ("use_ssh", "Use SSH", "check"),
+        ("port", "SSH port", "text"),
+        ("ssh_user", "SSH user", "text"),
+        ("ssh_password", "SSH password", "secret"),
+        ("ssh_key", "SSH key .ppk (optional)", "file"),
+        ("putty_exe", "putty.exe", "file"),
+    ]),
+    ("HopToDesk", "Remote desktop through HopToDesk (direct IP). One session at a "
+                  "time; the password is typed into HopToDesk.", [
+        ("use_hoptodesk", "Use HopToDesk", "check"),
+        ("hoptodesk_port", "Direct IP port", "text"),
+        ("hoptodesk_exe", "hoptodesk.exe", "file"),
+    ]),
+    ("File transfer", "FileZilla over SFTP, through the SSH port. The user and "
+                      "port come from the SSH tab. FileZilla asks for the password "
+                      "itself, Corridoor never passes it.", [
+        ("use_filezilla", "Use file transfer (FileZilla)", "check"),
+        ("filezilla_exe", "filezilla.exe", "file"),
+    ]),
+    ("Advanced", "You rarely need this tab.", [
+        ("", "Handing secrets to programs", "header"),
+        ("", "By default, OpenVPN and PuTTY read the VPN profile and the passwords "
+             "from a short-lived temporary file in the protected folder. A named "
+             "pipe hands over the same data from memory instead, so nothing is "
+             "written to disk. Whether your versions accept a pipe has to be "
+             "tried, so use the Pipe test below the tabs: it switches on only the "
+             "pipes that work. You do not need to tick these by hand.", "note"),
+        ("pipe_vpn_config", "VPN profile via pipe (copied profile only)", "check"),
+        ("pipe_vpn_auth", "VPN credentials via pipe", "check"),
+        ("pipe_ssh", "SSH password via pipe", "check"),
+        ("", "Log", "header"),
+        ("log_level", "Log detail", "choice"),
+        ("", "info: steps and results. debug: nearly everything (never "
+             "passwords). Takes effect when you save.", "note"),
+    ]),
 ]
+
+# Width in pixels after which explanations wrap.
+WRAP: int = 560
 
 
 class QueueHandler(logging.Handler):
@@ -83,8 +114,12 @@ class LogWindow(ttk.Frame):
 
     def __init__(self, root: tk.Tk, log_row: int, log_height: int = 14) -> None:
         """Create the frame and the log box in the given grid row."""
-        super().__init__(root, padding=10)
+        super().__init__(root, padding=12)
         self.root = root
+        try:  # the native Windows look; other themes keep working without it
+            ttk.Style().theme_use("vista")
+        except tk.TclError:
+            pass
         self.stop = threading.Event()
         self.worker: Optional[threading.Thread] = None
         self.success = False
@@ -141,59 +176,113 @@ class LogWindow(ttk.Frame):
 
 
 class ConfigWindow(LogWindow):
-    """Edit, save and test the settings."""
+    """Edit the settings (tabs), store them, check them, try the pipes.
+
+    The window has three parts, top to bottom:
+
+    1. **Tabs** with the settings, one tab per topic.
+    2. **Actions**, in three boxes: *Settings* (save), *Checks* (quick test and
+       diagnostics: do the settings work?) and *Pipes* (the pipe test: which way
+       of handing secrets to programs works here?).
+    3. The **log** of whatever is running.
+    """
 
     def __init__(self, root: tk.Tk, settings: Settings) -> None:
         """Build the form and fill it with the given settings."""
-        super().__init__(root, log_row=len(FIELDS) + 1, log_height=8)
+        super().__init__(root, log_row=2, log_height=9)
         values = asdict(settings)
         self.variables: dict[str, tk.Variable] = {}
-        for row, (name, label, kind) in enumerate(FIELDS):
-            if kind == "header":
-                ttk.Label(self, text=label, font=("TkDefaultFont", 9, "bold")
-                          ).grid(row=row, column=0, columnspan=2, sticky="w",
-                                 pady=(6, 0))
-                continue
-            if kind == "check":
-                variable: tk.Variable = tk.BooleanVar(value=values[name])
-                ttk.Checkbutton(self, text=label, variable=variable
-                                ).grid(row=row, column=1, sticky="w")
-            else:
-                variable = tk.StringVar(value=values[name])
-                ttk.Label(self, text=label).grid(row=row, column=0, sticky="w",
-                                                 padx=(0, 8))
-                if kind == "choice":
-                    ttk.Combobox(self, textvariable=variable, values=LOG_CHOICES,
-                                 state="readonly", width=10
-                                 ).grid(row=row, column=1, sticky="w", pady=1)
-                else:
-                    ttk.Entry(self, textvariable=variable,
-                              show="*" if kind == "secret" else ""
-                              ).grid(row=row, column=1, sticky="ew", pady=1)
-            if kind == "file":
-                ttk.Button(self, text="...", width=3,
-                           command=lambda v=variable: self.browse(v)
-                           ).grid(row=row, column=2, padx=(4, 0))
-            self.variables[name] = variable
 
-        buttons = ttk.Frame(self)
-        buttons.grid(row=len(FIELDS), column=0, columnspan=3, pady=8, sticky="e")
-        self.save_button = ttk.Button(buttons, text="Save", command=self.save)
-        self.save_button.pack(side="left", padx=4)
-        self.test_button = ttk.Button(buttons, text="Save & test", command=self.test)
-        self.test_button.pack(side="left")
-        self.diagnose_button = ttk.Button(buttons, text="Diagnostics",
-                                          command=self.diagnose)
-        self.diagnose_button.pack(side="left", padx=4)
-        ttk.Button(buttons, text="Export log...", command=self.export_log
-                   ).pack(side="left")
-        self.pipe_button = ttk.Button(buttons, text="Pipe test",
-                                      command=self.pipe_test)
-        self.pipe_button.pack(side="left", padx=4)
+        notebook = self.notebook = ttk.Notebook(self)
+        notebook.grid(row=0, column=0, columnspan=3, sticky="nsew")
+        for title, intro, fields in TABS:
+            tab = ttk.Frame(notebook, padding=14)
+            tab.columnconfigure(1, weight=1)
+            notebook.add(tab, text=title)
+            ttk.Label(tab, text=intro, wraplength=WRAP, foreground="#555555"
+                      ).grid(row=0, column=0, columnspan=3, sticky="w", pady=(0, 10))
+            for row, (name, label, kind) in enumerate(fields, start=1):
+                self.add_field(tab, row, values, name, label, kind)
+
+        self.build_actions()
         # Filled by the worker thread, applied by the GUI thread.
         self.pipe_results: Optional[dict[str, bool]] = None
         # The button that started the running job; it turns into "Cancel".
         self.active_button: Optional[ttk.Button] = None
+
+    def add_field(self, tab: ttk.Frame, row: int, values: dict, name: str,
+                  label: str, kind: str) -> None:
+        """Place one field of a tab and remember its variable by name."""
+        if kind == "header":
+            ttk.Label(tab, text=label, font=("TkDefaultFont", 10, "bold")
+                      ).grid(row=row, column=0, columnspan=3, sticky="w",
+                             pady=(10, 2))
+            return
+        if kind == "note":
+            ttk.Label(tab, text=label, wraplength=WRAP, foreground="#555555"
+                      ).grid(row=row, column=0, columnspan=3, sticky="w", pady=2)
+            return
+        if kind == "check":
+            variable: tk.Variable = tk.BooleanVar(value=values[name])
+            ttk.Checkbutton(tab, text=label, variable=variable
+                            ).grid(row=row, column=0, columnspan=3, sticky="w",
+                                   pady=2)
+        else:
+            variable = tk.StringVar(value=values[name])
+            ttk.Label(tab, text=label).grid(row=row, column=0, sticky="w",
+                                            padx=(0, 10), pady=3)
+            if kind == "choice":
+                ttk.Combobox(tab, textvariable=variable, values=LOG_CHOICES,
+                             state="readonly", width=10
+                             ).grid(row=row, column=1, sticky="w", pady=3)
+            else:
+                ttk.Entry(tab, textvariable=variable,
+                          show="*" if kind == "secret" else ""
+                          ).grid(row=row, column=1, sticky="ew", pady=3)
+            if kind == "file":
+                ttk.Button(tab, text="...", width=3,
+                           command=lambda v=variable: self.browse(v)
+                           ).grid(row=row, column=2, padx=(6, 0))
+        self.variables[name] = variable
+
+    def build_actions(self) -> None:
+        """Build the three boxes under the tabs: settings, checks, pipes."""
+        bar = ttk.Frame(self)
+        bar.grid(row=1, column=0, columnspan=3, sticky="ew", pady=10)
+        for column in range(3):
+            bar.columnconfigure(column, weight=1, uniform="actions")
+
+        def box(column: int, title: str, explanation: str) -> ttk.Frame:
+            frame = ttk.LabelFrame(bar, text=title, padding=8)
+            frame.grid(row=0, column=column, sticky="nsew",
+                       padx=(0 if column == 0 else 6, 0))
+            frame.columnconfigure(0, weight=1)
+            ttk.Label(frame, text=explanation, wraplength=170,
+                      foreground="#555555").grid(row=1, column=0, columnspan=3,
+                                                 sticky="w", pady=(6, 0))
+            return frame
+
+        settings_box = box(0, "Settings", "Stores the settings, encrypted.")
+        self.save_button = ttk.Button(settings_box, text="Save", command=self.save)
+        self.save_button.grid(row=0, column=0, sticky="w")
+        ttk.Button(settings_box, text="Export log...", command=self.export_log
+                   ).grid(row=0, column=1, padx=(6, 0))
+
+        checks_box = box(1, "Checks", "Quick test: connect once and check every "
+                                      "enabled client. Diagnostics: run every "
+                                      "check and summarise.")
+        self.test_button = ttk.Button(checks_box, text="Quick test",
+                                      command=self.test)
+        self.test_button.grid(row=0, column=0, sticky="w")
+        self.diagnose_button = ttk.Button(checks_box, text="Diagnostics",
+                                          command=self.diagnose)
+        self.diagnose_button.grid(row=0, column=1, padx=(6, 0))
+
+        pipes_box = box(2, "Pipes", "Tries the pipes of the Advanced tab for "
+                                    "real and switches on those that work.")
+        self.pipe_button = ttk.Button(pipes_box, text="Pipe test",
+                                      command=self.pipe_test)
+        self.pipe_button.grid(row=0, column=0, sticky="w")
 
     def browse(self, variable: tk.StringVar) -> None:
         """Pick a file and store its path in the given variable."""
@@ -215,9 +304,10 @@ class ConfigWindow(LogWindow):
         problem = ""
         if not (settings.profile_file and settings.host):
             problem = "The profile and the remote host are required."
-        elif not (settings.use_ssh or settings.use_hoptodesk):
-            problem = "Switch on SSH, HopToDesk, or both."
-        elif settings.use_ssh and not valid(settings.port):
+        elif not (settings.use_ssh or settings.use_hoptodesk
+                  or settings.use_filezilla):
+            problem = "Switch on at least one of SSH, HopToDesk and file transfer."
+        elif (settings.use_ssh or settings.use_filezilla) and not valid(settings.port):
             problem = "The SSH port is invalid."
         elif settings.use_hoptodesk and not valid(settings.hoptodesk_port):
             problem = "The HopToDesk port is invalid."
@@ -233,7 +323,7 @@ class ConfigWindow(LogWindow):
         return settings
 
     def test(self) -> None:
-        """Save, then run the connection test (stops at the first failure)."""
+        """Save, then run the quick test (stops at the first failure)."""
         self.launch(self.test_button, lambda session: session.run_test())
 
     def diagnose(self) -> None:
@@ -290,7 +380,7 @@ class ConfigWindow(LogWindow):
         if not running:
             self.apply_pipe_results()
         self.save_button.configure(state="disabled" if running else "normal")
-        for button, label in ((self.test_button, "Save & test"),
+        for button, label in ((self.test_button, "Quick test"),
                               (self.diagnose_button, "Diagnostics"),
                               (self.pipe_button, "Pipe test")):
             active = running and button is self.active_button
@@ -303,8 +393,8 @@ class HubWindow(LogWindow):
     """Normal mode: one VPN connection and a list of client sessions.
 
     The VPN is brought up at once and the first session of the requested kind
-    is added. More SSH sessions (any number) and one HopToDesk session can be
-    added; each can be closed alone. ``Disconnect`` (or the window's X) closes
+    is added. More SSH sessions (up to 10), one HopToDesk session and one
+    file transfer session (FileZilla) can be added; each can be closed alone. ``Disconnect`` (or the window's X) closes
     all sessions and the VPN. After a failure the window stays open with the log.
     """
 
@@ -325,12 +415,15 @@ class HubWindow(LogWindow):
                                          command=self.add_ssh)
         self.add_hop_button = ttk.Button(buttons, text="Add HopToDesk session",
                                          command=self.add_hoptodesk)
+        self.add_files_button = ttk.Button(buttons, text="Add file transfer",
+                                           command=self.add_filezilla)
         self.close_button = ttk.Button(buttons, text="Close session",
                                        command=self.close_selected)
         self.disconnect_button = ttk.Button(buttons, text="Disconnect",
                                             command=self.close)
         for button in (self.add_ssh_button, self.add_hop_button,
-                       self.close_button, self.disconnect_button):
+                       self.add_files_button, self.close_button,
+                       self.disconnect_button):
             button.pack(side="left", padx=2)
 
         def job(session: Session) -> bool:
@@ -348,6 +441,11 @@ class HubWindow(LogWindow):
         """Add the HopToDesk session to the connection."""
         if self.connection:
             self.connection.add_hoptodesk()
+
+    def add_filezilla(self) -> None:
+        """Add the file transfer session (FileZilla) to the connection."""
+        if self.connection:
+            self.connection.add_filezilla()
 
     def close_selected(self) -> None:
         """Close the selected session; the VPN stays up."""
@@ -368,7 +466,8 @@ class HubWindow(LogWindow):
                     self.tree.insert("", "end", iid=str(number), values=(title,))
                 self.shown = sessions
             for button, kind in ((self.add_ssh_button, "ssh"),
-                                 (self.add_hop_button, "hoptodesk")):
+                                 (self.add_hop_button, "hoptodesk"),
+                                 (self.add_files_button, "filezilla")):
                 button.configure(
                     state="normal" if connection.can_add(kind) else "disabled")
             self.close_button.configure(

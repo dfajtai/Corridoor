@@ -4,7 +4,8 @@
 sessions until the user disconnects:
 
 * any number of SSH sessions (one PuTTY window each, up to ``MAX_SSH``),
-* at most one HopToDesk session.
+* at most one HopToDesk session,
+* at most one file transfer session (FileZilla).
 
 A session can be closed on its own without touching the VPN. Disconnecting
 closes every session and then the tunnel. If the launcher crashes, the Windows
@@ -38,6 +39,9 @@ PWFILE_LIFETIME: float = 10.0
 
 SSH: str = "ssh"
 HOPTODESK: str = "hoptodesk"
+FILEZILLA: str = "filezilla"
+KIND_NAMES: dict[str, str] = {SSH: "SSH", HOPTODESK: "HopToDesk",
+                              FILEZILLA: "file transfer"}
 
 log: logging.Logger = logging.getLogger("corridoor")
 
@@ -48,9 +52,10 @@ class ClientSession:
 
     Attributes:
         number: Unique number, shown in the list and used to close it.
-        kind: ``"ssh"`` or ``"hoptodesk"``.
-        process: The launched process. For HopToDesk it may already be gone
-            while the session still runs, so it is never used to detect the end.
+        kind: ``"ssh"``, ``"hoptodesk"`` or ``"filezilla"``.
+        process: The launched process. For HopToDesk and FileZilla it may
+            already be gone while the session still runs (they hand the request
+            to a running instance), so it is never used to detect the end.
         started: ``time.monotonic()`` at the start.
         password: The secret given to PuTTY, if any.
         password_deleted: True once the password file has been removed.
@@ -66,7 +71,11 @@ class ClientSession:
     @property
     def title(self) -> str:
         """Text for the session list."""
-        return "HopToDesk" if self.kind == HOPTODESK else f"SSH #{self.number}"
+        if self.kind == HOPTODESK:
+            return "HopToDesk"
+        if self.kind == FILEZILLA:
+            return "File transfer"
+        return f"SSH #{self.number}"
 
     def ended(self) -> bool:
         """Return True if the client is known to be gone (PuTTY only)."""
@@ -99,7 +108,8 @@ class Connection:
         """Return True if a session of this kind may be added now.
 
         The tunnel must be up, the client must be switched on in the settings,
-        and the limits must not be reached: one HopToDesk, ``MAX_SSH`` SSH.
+        and the limits must not be reached: one HopToDesk, one file transfer,
+        ``MAX_SSH`` SSH.
         """
         return self.state == "up" and self._allowed(kind)
 
@@ -110,6 +120,10 @@ class Connection:
     def add_hoptodesk(self) -> None:
         """Ask for the HopToDesk session (started by the connection thread)."""
         self._commands.put(("add", HOPTODESK))
+
+    def add_filezilla(self) -> None:
+        """Ask for the file transfer session (started by the connection thread)."""
+        self._commands.put(("add", FILEZILLA))
 
     def close_session(self, number: int) -> None:
         """Ask for one session to be closed; the tunnel stays up."""
@@ -207,8 +221,7 @@ class Connection:
         """Start a client session if the limits and the programs allow it."""
         if not self._allowed(kind):
             log.debug("not allowed: sessions now %s", self.sessions())
-            log.warning("Cannot add another %s session.",
-                        "HopToDesk" if kind == HOPTODESK else "SSH")
+            log.warning("Cannot add another %s session.", KIND_NAMES.get(kind, kind))
             return
         session = self.session
         secret: Optional[Secret] = None
@@ -216,6 +229,8 @@ class Connection:
             session.check_programs((kind,))
             if kind == SSH:
                 process, secret = session.launch_putty(self.target_ip)
+            elif kind == FILEZILLA:
+                process = session.launch_filezilla(self.target_ip)
             else:
                 process = session.launch_hoptodesk(self.target_ip)
         except (StepError, OSError) as error:
@@ -233,9 +248,11 @@ class Connection:
         """Check the settings and the limits for a new session of this kind."""
         with self._lock:
             kinds = [client.kind for client in self._clients]
+        settings = self.session.settings
         if kind == SSH:
-            return self.session.settings.use_ssh and kinds.count(SSH) < MAX_SSH
-        return self.session.settings.use_hoptodesk and HOPTODESK not in kinds
+            return settings.use_ssh and kinds.count(SSH) < MAX_SSH
+        enabled = {HOPTODESK: settings.use_hoptodesk, FILEZILLA: settings.use_filezilla}
+        return enabled.get(kind, False) and kind not in kinds
 
     def _reap(self) -> None:
         """Drop PuTTY windows that were closed and delete old password files."""
@@ -268,8 +285,8 @@ class Connection:
                 client.process.wait(timeout=CLOSE_TIMEOUT)
             except subprocess.TimeoutExpired:
                 client.process.kill()
-        # HopToDesk cannot be closed reliably (it may belong to a running
-        # instance), so it is only removed from the list.
+        # HopToDesk and FileZilla cannot be closed reliably (they may belong to
+        # a running instance), so they are only removed from the list.
         log.info("%s closed.", client.title)
         self._remove(client)
 

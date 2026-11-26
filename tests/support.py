@@ -95,6 +95,12 @@ with open({marker!r}, "w") as stream:
     stream.write(" ".join(sys.argv[1:]))
 """
 
+FILEZILLA_SCRIPT = """
+import json, sys
+with open({marker!r}, "w") as stream:
+    json.dump(sys.argv[1:], stream)
+"""
+
 GOOD_PROBE = ("command=/usr/bin/hoptodesk", "service=active", "processes=2")
 
 
@@ -203,12 +209,16 @@ class SessionTestCase(unittest.TestCase):
         self.hoptodesk = self.fake(
             "hoptodesk.exe", HOPTODESK_SCRIPT.format(marker=str(self.marker)))
         self.openvpn_calls = self.work_dir / "openvpn_calls"
+        self.filezilla_marker = self.work_dir / "filezilla_args"
+        self.filezilla = self.fake(
+            "filezilla.exe", FILEZILLA_SCRIPT.format(marker=str(self.filezilla_marker)))
 
         self.settings = Settings(
             profile_file=str(self.profile), host="127.0.0.1", port=str(self.port),
             vpn_user="u", vpn_password="p", ssh_user="x", ssh_password="y",
             openvpn_exe=self.openvpn, putty_exe=self.putty,
-            hoptodesk_exe=self.hoptodesk, hoptodesk_port=str(self.port))
+            hoptodesk_exe=self.hoptodesk, hoptodesk_port=str(self.port),
+            filezilla_exe=self.filezilla)
         store.save_settings(self.settings)
 
     # ---------------------------------------------------------------- #

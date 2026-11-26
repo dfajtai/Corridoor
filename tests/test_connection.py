@@ -173,6 +173,77 @@ class HopToDeskSessionTest(ConnectionTestCase):
         self.wait_until(lambda: self.titles() == ["HopToDesk"])
 
 
+class FileTransferTest(ConnectionTestCase):
+    """FileZilla: one session, opened on an sftp address, without a password."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.settings = replace(self.settings, use_filezilla=True,
+                                ssh_password="SSHsecret456")
+        store.save_settings(self.settings)
+
+    def arguments(self) -> list:
+        import json
+        return json.loads(self.wait_for(self.filezilla_marker))
+
+    def test_opens_an_sftp_address_and_asks_for_the_password_itself(self) -> None:
+        connection = self.start()
+        connection.add_filezilla()
+        self.wait_until(lambda: self.titles() == ["SSH #1", "File transfer"])
+        self.assertEqual(self.arguments(),
+                         ["-l", "interactive", f"sftp://x@127.0.0.1:{self.port}"])
+
+    def test_the_password_never_reaches_the_command_line(self) -> None:
+        connection = self.start()
+        connection.add_filezilla()
+        self.wait_until(lambda: len(self.numbers()) == 2)
+        self.assertNotIn("SSHsecret456", " ".join(self.arguments()))
+
+    def test_user_name_is_quoted_in_the_address(self) -> None:
+        settings = replace(self.settings, ssh_user="a b@c")
+        connection = self.start(settings=settings)
+        connection.add_filezilla()
+        self.assertIn("sftp://a%20b%40c@127.0.0.1", self.arguments()[-1])
+
+    def test_without_a_user_name_filezilla_asks_for_it(self) -> None:
+        settings = replace(self.settings, ssh_user="")
+        connection = self.start(settings=settings)
+        connection.add_filezilla()
+        self.assertEqual(self.arguments()[-1], f"sftp://127.0.0.1:{self.port}")
+
+    def test_only_one_file_transfer_session(self) -> None:
+        connection = self.start()
+        connection.add_filezilla()
+        self.wait_until(lambda: len(self.numbers()) == 2)
+        self.assertFalse(connection.can_add("filezilla"))
+        connection.add_filezilla()
+        time.sleep(0.5)
+        self.assertEqual(len(self.numbers()), 2)
+        self.assertIn("Cannot add another file transfer session", self.log_text())
+
+    def test_it_is_only_removed_from_the_list(self) -> None:
+        connection = self.start()
+        connection.add_filezilla()
+        self.wait_until(lambda: len(self.numbers()) == 2)
+        connection.close_session(2)
+        self.wait_until(lambda: self.numbers() == [1])
+        self.assertTrue(connection.can_add("filezilla"))
+
+    def test_can_be_switched_off(self) -> None:
+        connection = self.start(
+            settings=replace(self.settings, use_filezilla=False))
+        self.assertFalse(connection.can_add("filezilla"))
+
+    def test_missing_program_does_not_stop_the_vpn(self) -> None:
+        connection = self.start()
+        connection.session.settings = replace(
+            connection.session.settings, filezilla_exe="/nonexistent")
+        connection.add_filezilla()
+        time.sleep(0.5)
+        self.assertEqual(self.titles(), ["SSH #1"])
+        self.assertEqual(connection.state, "up")
+
+
 class DisconnectTest(ConnectionTestCase):
     """Ending the connection closes everything."""
 

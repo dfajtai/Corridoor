@@ -42,6 +42,33 @@ class RunTest(SessionTestCase):
         self.assertEqual(self.new_session().key_option(), [])
 
 
+class FileTransferCheckTest(SessionTestCase):
+    """FileZilla needs the SSH port, but neither PuTTY nor an SSH login."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.settings = replace(self.settings, use_ssh=False, use_filezilla=True,
+                                putty_exe="/nonexistent")
+
+    def test_quick_test_checks_the_sftp_port(self) -> None:
+        self.assertTrue(self.new_session().run_test())
+        self.assertIn("Reaching SSH port", self.log_text())
+
+    def test_closed_port_fails(self) -> None:
+        self.assertFalse(self.new_session(
+            replace(self.settings, port="1")).run_test())
+
+    def test_missing_program_fails(self) -> None:
+        self.assertFalse(self.new_session(
+            replace(self.settings, filezilla_exe="/nonexistent")).run_test())
+
+    def test_diagnostics_check_the_port(self) -> None:
+        self.fake_openvpn(sleep=3)
+        self.assertTrue(self.new_session().diagnose())
+        self.assertIn("OK       SSH port", self.log_text())
+        self.assertNotIn("SSH login", self.log_text())
+
+
 class HopToDeskTest(SessionTestCase):
     """The HopToDesk client and its checks."""
 

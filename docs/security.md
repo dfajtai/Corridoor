@@ -22,6 +22,8 @@ Leftover temporary files from a killed session are removed at the next start.
 - Local storage cannot protect secrets from an attacker with administrator rights.
 - PuTTY and HopToDesk **run elevated**, because the launcher starts them. Every PuTTY
   window gets its own password secret, released when that window closes.
+- FileZilla is started without a password (`-l interactive`); it asks for it itself,
+  so the password never appears on a command line.
 - OpenVPN and all PuTTY windows are in a job object that Windows ends if the
   launcher crashes.
 - Profiles containing `redirect-gateway`, `redirect-private`, `plugin` or `config`
@@ -35,7 +37,7 @@ Leftover temporary files from a killed session are removed at the next start.
 ## Limitations
 
 - One VPN connection and one target host at a time; on it up to 10 SSH sessions and
-  one HopToDesk session.
+  one HopToDesk session and one file transfer (FileZilla) session.
 - Only the target's IPv4 address is routed. Server-pushed routes and DNS settings
   are ignored.
 - Encrypted VPN private keys and challenge-based two-factor authentication are not

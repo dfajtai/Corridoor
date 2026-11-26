@@ -34,6 +34,10 @@ class Settings:
     hoptodesk_port: str = DEFAULT_PORT
     hoptodesk_exe: str = r"C:\Program Files\HopToDesk\hoptodesk.exe"
 
+    # --- File transfer (FileZilla over SFTP, through the SSH port) ---
+    use_filezilla: bool = False
+    filezilla_exe: str = r"C:\Program Files\FileZilla FTP Client\filezilla.exe"
+
     # --- Test features: named pipes instead of temporary files ---
     pipe_vpn_config: bool = False  # only used together with copy_profile
     pipe_vpn_auth: bool = False
