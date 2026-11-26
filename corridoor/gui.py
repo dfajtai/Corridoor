@@ -28,6 +28,7 @@ log = logging.getLogger("corridoor")
 
 # Choices of the "Log detail" field, from the least to the most detailed.
 LOG_CHOICES: list[str] = list(store.LOG_LEVELS)
+LOG_LEVELS_BY_NAME: dict[str, int] = store.LOG_LEVELS
 
 # One tab: (title, introduction, fields). A field is (name, label, kind) with
 # kind one of: text, secret, file, check, choice, header, note. ``header`` and
@@ -61,6 +62,7 @@ TABS: list[tuple[str, str, list[Field]]] = [
     ("SSH", "PuTTY windows on the remote host; you can open several at once. "
             "Allow SSH on the General tab.", [
         ("port", "SSH port", "text"),
+        ("max_ssh", "Max. PuTTY windows at once (1-10)", "text"),
         ("ssh_user", "SSH user", "text"),
         ("ssh_password", "SSH password", "secret"),
         ("ssh_key", "SSH key .ppk (optional)", "file"),
@@ -74,10 +76,17 @@ TABS: list[tuple[str, str, list[Field]]] = [
                   "port come from the SSH tab, and FileZilla asks for the password "
                   "itself: Corridoor never passes it. Allow FileZilla on the "
                   "General tab.", [
-        ("", "Nothing to set here. Make sure the SSH port and user are right.",
-         "note"),
+        ("", "Nothing to set here. Make sure the SSH port and user are right. "
+             "The tests also start the server's SFTP subsystem with plink.exe "
+             "(from the PuTTY folder).", "note"),
     ]),
     ("Advanced", "You rarely need this tab.", [
+        ("", "Programs Corridoor opens", "header"),
+        ("clients_without_admin",
+         "Start PuTTY, HopToDesk and FileZilla without administrator rights", "check"),
+        ("", "Corridoor needs administrator rights for the VPN, but the programs it "
+             "opens for you do not: they run as you, with normal rights. Untick this "
+             "only if one of them cannot be started that way.", "note"),
         ("", "Handing secrets to programs", "header"),
         ("", "By default, OpenVPN and PuTTY read the VPN profile and the passwords "
              "from a short-lived temporary file in the protected folder. A named "
@@ -99,13 +108,17 @@ TABS: list[tuple[str, str, list[Field]]] = [
 WRAP: int = 560
 
 
+# Lines of the log kept in the window, so the filter can be changed afterwards.
+LOG_BUFFER: int = 5000
+
+
 class QueueHandler(logging.Handler):
     """Hand log messages over to the GUI thread (Tk is not thread safe)."""
 
     def __init__(self) -> None:
-        """Create the handler with its message queue."""
+        """Create the handler with its message queue of ``(level, text)``."""
         super().__init__()
-        self.messages: "queue.Queue[str]" = queue.Queue()
+        self.messages: "queue.Queue[tuple[int, str]]" = queue.Queue()
         self.setFormatter(logging.Formatter("%(asctime)s %(message)s", "%H:%M:%S"))
 
     def format(self, record: logging.LogRecord) -> str:
@@ -117,15 +130,24 @@ class QueueHandler(logging.Handler):
         return text
 
     def emit(self, record: logging.LogRecord) -> None:
-        """Queue the formatted record."""
-        self.messages.put(self.format(record))
+        """Queue the formatted record together with its level."""
+        self.messages.put((record.levelno, self.format(record)))
 
 
 class LogWindow(ttk.Frame):
     """Base window: a log view plus the handling of one background session."""
 
-    def __init__(self, root: tk.Tk, log_row: int, log_height: int = 14) -> None:
-        """Create the frame and the log box in the given grid row."""
+    def __init__(self, root: tk.Tk, log_row: int, log_height: int = 14,
+                 side: bool = False) -> None:
+        """Create the frame and the log box.
+
+        Args:
+            root: The window.
+            log_row: Grid row of the log (below the other parts).
+            log_height: Height of the log in text lines.
+            side: Put the log to the right of everything else (column 1,
+                full height) instead of below it.
+        """
         super().__init__(root, padding=12)
         self.root = root
         try:  # the native Windows look; other themes keep working without it
@@ -141,9 +163,29 @@ class LogWindow(ttk.Frame):
         root.rowconfigure(0, weight=1)
         self.columnconfigure(1, weight=1)
         self.rowconfigure(log_row, weight=1)
-        self.text = scrolledtext.ScrolledText(self, width=90, height=log_height,
-                                              state="disabled")
-        self.text.grid(row=log_row, column=0, columnspan=3, sticky="nsew")
+        # The log: a small bar with the live controls above the text.
+        self.lines: list[tuple[int, str]] = []   # everything received (bounded)
+        self.level_variable = tk.StringVar(value=self.logger_level())
+        self.filter_variable = tk.StringVar(value="")
+        holder = ttk.Frame(self)
+        if side:
+            holder.grid(row=0, column=1, sticky="nsew", padx=(12, 0))
+        else:
+            holder.grid(row=log_row, column=0, columnspan=3, sticky="nsew")
+        holder.columnconfigure(3, weight=1)
+        holder.rowconfigure(1, weight=1)
+        ttk.Label(holder, text="Detail").grid(row=0, column=0, padx=(0, 4))
+        chooser = ttk.Combobox(holder, textvariable=self.level_variable,
+                               values=LOG_CHOICES, state="readonly", width=7)
+        chooser.grid(row=0, column=1)
+        chooser.bind("<<ComboboxSelected>>", lambda event: self.change_level())
+        ttk.Label(holder, text="Filter").grid(row=0, column=2, padx=(12, 4))
+        finder = ttk.Entry(holder, textvariable=self.filter_variable)
+        finder.grid(row=0, column=3, sticky="ew")
+        finder.bind("<KeyRelease>", lambda event: self.redraw())
+        self.text = scrolledtext.ScrolledText(
+            holder, width=62 if side else 90, height=log_height, state="disabled")
+        self.text.grid(row=1, column=0, columnspan=4, sticky="nsew", pady=(6, 0))
 
         self.handler = QueueHandler()
         log.addHandler(self.handler)
@@ -165,13 +207,53 @@ class LogWindow(ttk.Frame):
         self.worker = threading.Thread(target=work)
         self.worker.start()
 
+    @staticmethod
+    def logger_level() -> str:
+        """Return the current detail of the log as ``info`` or ``debug``."""
+        return "debug" if log.getEffectiveLevel() <= logging.DEBUG else "info"
+
+    def visible(self, level: int, text: str) -> bool:
+        """Return True if a line passes the detail and the text filter."""
+        if level < LOG_LEVELS_BY_NAME.get(self.level_variable.get(), logging.INFO):
+            return False
+        wanted = self.filter_variable.get().strip().lower()
+        return not wanted or wanted in text.lower()
+
+    def change_level(self) -> None:
+        """Apply the detail chosen in the window to the running program, at once.
+
+        Lines that were not recorded before (debug lines of the time when the
+        detail was ``info``) cannot be shown afterwards.
+        """
+        store.apply_log_level(self.level_variable.get())
+        self.redraw()
+
+    def redraw(self) -> None:
+        """Show again the kept lines that pass the current detail and filter."""
+        self.text.configure(state="normal")
+        self.text.delete("1.0", "end")
+        for level, text in self.lines:
+            if self.visible(level, text):
+                self.text.insert("end", text + "\n")
+        self.text.see("end")
+        self.text.configure(state="disabled")
+
     def poll(self) -> None:
         """Move queued messages into the text box and refresh the buttons."""
+        current = self.logger_level()
+        if current != self.level_variable.get():  # changed by saving the settings
+            self.level_variable.set(current)
+            self.redraw()
         while not self.handler.messages.empty():
-            self.text.configure(state="normal")
-            self.text.insert("end", self.handler.messages.get() + "\n")
-            self.text.see("end")
-            self.text.configure(state="disabled")
+            item = self.handler.messages.get()
+            level, text = item if isinstance(item, tuple) else (logging.INFO, item)
+            self.lines.append((level, text))
+            del self.lines[:-LOG_BUFFER]
+            if self.visible(level, text):
+                self.text.configure(state="normal")
+                self.text.insert("end", text + "\n")
+                self.text.see("end")
+                self.text.configure(state="disabled")
         self.after(200, self.poll)
         self.refresh()  # last: it may destroy the window
 
@@ -190,23 +272,27 @@ class LogWindow(ttk.Frame):
 class ConfigWindow(LogWindow):
     """Edit the settings (tabs), store them, check them, try the pipes.
 
-    The window has three parts, top to bottom:
+    The window has two columns. On the left, top to bottom:
 
     1. **Tabs** with the settings, one tab per topic.
     2. **Actions**, in three boxes: *Settings* (save), *Checks* (quick test and
        diagnostics: do the settings work?) and *Pipes* (the pipe test: which way
        of handing secrets to programs works here?).
-    3. The **log** of whatever is running.
+
+    On the right, over the full height, the **log** of whatever is running.
     """
 
     def __init__(self, root: tk.Tk, settings: Settings) -> None:
         """Build the form and fill it with the given settings."""
-        super().__init__(root, log_row=2, log_height=9)
+        super().__init__(root, log_row=0, log_height=28, side=True)
         values = asdict(settings)
         self.variables: dict[str, tk.Variable] = {}
 
-        notebook = self.notebook = ttk.Notebook(self)
-        notebook.grid(row=0, column=0, columnspan=3, sticky="nsew")
+        self.left = ttk.Frame(self)  # tabs and actions; the log is on the right
+        self.left.grid(row=0, column=0, sticky="ns")
+        self.left.rowconfigure(0, weight=1)
+        notebook = self.notebook = ttk.Notebook(self.left)
+        notebook.grid(row=0, column=0, sticky="nsew")
         for title, intro, fields in TABS:
             tab = ttk.Frame(notebook, padding=14)
             tab.columnconfigure(1, weight=1)
@@ -259,8 +345,8 @@ class ConfigWindow(LogWindow):
 
     def build_actions(self) -> None:
         """Build the three boxes under the tabs: settings, checks, pipes."""
-        bar = ttk.Frame(self)
-        bar.grid(row=1, column=0, columnspan=3, sticky="ew", pady=10)
+        bar = ttk.Frame(self.left)
+        bar.grid(row=1, column=0, sticky="ew", pady=(10, 0))
         for column in range(3):
             bar.columnconfigure(column, weight=1, uniform="actions")
 
@@ -321,6 +407,8 @@ class ConfigWindow(LogWindow):
             problem = "Allow at least one of SSH, HopToDesk and FileZilla (General tab)."
         elif (settings.use_ssh or settings.use_filezilla) and not valid(settings.port):
             problem = "The SSH port is invalid."
+        elif not (settings.max_ssh.isdecimal() and 1 <= int(settings.max_ssh) <= 10):
+            problem = "The maximum number of PuTTY windows must be 1 to 10."
         elif settings.use_hoptodesk and not valid(settings.hoptodesk_port):
             problem = "The HopToDesk port is invalid."
         if problem:
@@ -380,7 +468,7 @@ class ConfigWindow(LogWindow):
             return
         try:
             with open(path, "w", encoding="utf-8") as stream:
-                stream.write(self.text.get("1.0", "end"))
+                stream.write(self.text.get("1.0", "end"))  # what is shown now
         except OSError as error:
             messagebox.showerror("Export failed", str(error))
 
@@ -405,7 +493,8 @@ class HubWindow(LogWindow):
     """Normal mode: one VPN connection and a list of client sessions.
 
     The VPN is brought up at once and the first session of the requested kind
-    is added. More SSH sessions (up to 10), one HopToDesk session and one
+    is added. More SSH sessions (up to the ``max_ssh`` setting), one HopToDesk
+    session and one
     FileZilla session can be added; each can be closed alone. ``Disconnect``
     (or the window's X) closes all sessions and the VPN. After a failure the window stays open with the log.
     """
@@ -416,9 +505,9 @@ class HubWindow(LogWindow):
         self.connection: Optional[Connection] = None
         self.shown: list[tuple[int, str]] = []
 
-        self.tree = ttk.Treeview(self, columns=("session",), show="headings",
-                                 height=4, selectmode="browse")
-        self.tree.heading("session", text="Sessions")
+        # No column heading: a heading row looks clickable and is only noise.
+        self.tree = ttk.Treeview(self, show="tree", height=4, selectmode="browse")
+        self.tree.column("#0", stretch=True)
         self.tree.grid(row=0, column=0, columnspan=3, sticky="ew")
 
         buttons = ttk.Frame(self)
@@ -475,7 +564,7 @@ class HubWindow(LogWindow):
             if sessions != self.shown:
                 self.tree.delete(*self.tree.get_children())
                 for number, title in sessions:
-                    self.tree.insert("", "end", iid=str(number), values=(title,))
+                    self.tree.insert("", "end", iid=str(number), text=title)
                 self.shown = sessions
             for button, kind in ((self.add_ssh_button, "ssh"),
                                  (self.add_hop_button, "hoptodesk"),

@@ -4,7 +4,7 @@
 $ErrorActionPreference = "Stop"
 
 $installDir = Join-Path $env:ProgramFiles "Corridoor_app"   # same as in build.ps1
-$dist = Join-Path $PSScriptRoot "corridoor.dist"
+$dist = Join-Path $PSScriptRoot "build\main.dist"   # same as in build.ps1
 if (-not (Test-Path (Join-Path $dist "corridoor.exe"))) { throw "Run build.ps1 first." }
 
 # Replace only the program; the encrypted settings live in another folder.

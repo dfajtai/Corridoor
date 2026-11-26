@@ -136,6 +136,11 @@ class GuiTest(unittest.TestCase):
                 self.assertFalse(name.endswith("_exe") or name.startswith("use_"),
                                  f"{name} belongs on the General tab, not {title}")
 
+    def test_clients_without_admin_is_a_switch_on_the_advanced_tab(self) -> None:
+        advanced = dict((name, kind) for name, _, kind in gui.TABS[-1][2])
+        self.assertEqual(advanced["clients_without_admin"], "check")
+        self.assertTrue(Settings().clients_without_admin)
+
     def test_every_tab_explains_itself(self) -> None:
         for title, intro, _ in gui.TABS:
             self.assertTrue(intro.strip(), title)
@@ -169,6 +174,70 @@ class GuiTest(unittest.TestCase):
             text = handler.format(record)
             self.assertTrue(text.endswith(f"{marker}hello"), text)
             self.assertEqual("[debug]" in text, bool(marker))
+
+    def test_max_ssh_is_a_validated_field_of_the_ssh_tab(self) -> None:
+        window = self.window()
+        self.assertEqual(window.variables["max_ssh"].get(), "4")
+        with mock.patch("corridoor.store.save_settings") as save:
+            for bad in ("0", "11", "x", ""):
+                window.variables["max_ssh"].set(bad)
+                self.assertIsNone(window.save(), bad)
+            window.variables["max_ssh"].set("10")
+            self.assertIsNotNone(window.save())
+            self.assertEqual(save.call_count, 1)
+
+    def test_log_lines_are_kept_with_their_level(self) -> None:
+        window = self.window()
+        window.handler.messages.put((logging.DEBUG, "12:00:00 [debug] detail"))
+        window.handler.messages.put((logging.INFO, "12:00:01 headline"))
+        window.poll()
+        self.assertEqual([level for level, _ in window.lines],
+                         [logging.DEBUG, logging.INFO])
+
+    def test_detail_filter_hides_debug_lines_afterwards(self) -> None:
+        window = self.window()
+        window.level_variable.set("debug")
+        self.assertTrue(window.visible(logging.DEBUG, "x"))
+        window.level_variable.set("info")
+        self.assertFalse(window.visible(logging.DEBUG, "x"))
+        self.assertTrue(window.visible(logging.INFO, "x"))
+        self.assertTrue(window.visible(logging.WARNING, "x"))
+
+    def test_text_filter_is_live_and_ignores_the_case(self) -> None:
+        window = self.window()
+        window.level_variable.set("debug")
+        window.filter_variable.set("  SSH ")
+        self.assertTrue(window.visible(logging.INFO, "SSH #1 started."))
+        self.assertTrue(window.visible(logging.INFO, "plink ssh login"))
+        self.assertFalse(window.visible(logging.INFO, "HopToDesk started."))
+        window.filter_variable.set("")
+        self.assertTrue(window.visible(logging.INFO, "HopToDesk started."))
+
+    def test_redraw_shows_only_the_matching_lines(self) -> None:
+        window = self.window()
+        window.lines = [(logging.INFO, "one"), (logging.DEBUG, "two"),
+                        (logging.INFO, "three")]
+        window.level_variable.set("info")
+        window.filter_variable.set("t")
+        window.text = MagicMock()
+        window.redraw()
+        shown = [call.args[1] for call in window.text.insert.call_args_list]
+        self.assertEqual(shown, ["three\n"])  # "two" is debug, "one" has no "t"
+
+    def test_changing_the_detail_applies_it_to_the_running_program(self) -> None:
+        window = self.window()
+        window.level_variable.set("debug")
+        with mock.patch("corridoor.store.apply_log_level") as apply:
+            window.change_level()
+        apply.assert_called_once_with("debug")
+
+    def test_the_buffer_is_bounded(self) -> None:
+        window = self.window()
+        for number in range(gui.LOG_BUFFER + 50):
+            window.handler.messages.put((logging.INFO, f"line {number}"))
+        window.poll()
+        self.assertEqual(len(window.lines), gui.LOG_BUFFER)
+        self.assertEqual(window.lines[-1][1], f"line {gui.LOG_BUFFER + 49}")
 
     def test_log_detail_is_a_field_of_the_form(self) -> None:
         window = self.window()

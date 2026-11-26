@@ -10,6 +10,8 @@ What is replaced:
 * ``winapi.single_instance``    no mutex
 * ``winapi.exit_event``         a file instead of a Windows event
 * ``winapi.kill_on_close_job``  no job object
+* ``winapi.is_admin``           False (tests of limited clients turn it on)
+* ``winapi.process_running``    True (HopToDesk / FileZilla seem to be open)
 * ``net.ping``                  the answer is ``self.ping_reply``
 * ``store.SECRET_DIR`` & co.    a temporary folder
 * ``subprocess.Popen``          a script in the fake ``bin`` folder is started
@@ -56,7 +58,15 @@ if refused:
     print("cannot read", flush=True)
     sys.exit(1)
 mode = {mode!r}
-if mode == "ready":
+if mode == "noisy":
+    # Like the real OpenVPN: much chatter, a few lines that matter.
+    for line in ("OpenVPN 2.7 fake build", "library versions: fake",
+                 "TCP/UDP: Preserving recently used remote address",
+                 "TLS: Initial packet from 127.0.0.1"):
+        print(line, flush=True)
+    print({ready!r}, flush=True)
+    time.sleep({sleep!r})
+elif mode == "ready":
     print({ready!r}, flush=True)
     time.sleep({sleep!r})
 elif mode == "serve":
@@ -115,9 +125,10 @@ class FakePipe:
     unread: bool = False
     folder: Path = Path(".")
 
-    def __init__(self, data: bytes) -> None:
+    def __init__(self, data: bytes, reader_sid: str = None) -> None:
         self.path = str(FakePipe.folder / f"pipe-{len(FakePipe.made)}")
         self.data = data
+        self.reader_sid = reader_sid
         self.delivered = False
         self.closed = False
         FakePipe.made.append(self)
@@ -164,6 +175,10 @@ class SessionTestCase(unittest.TestCase):
         self.exit_file = self.work_dir / "exit_event"
         patch("corridoor.winapi.exit_event", lambda: contextlib.nullcontext(
             (str(self.exit_file), lambda: self.exit_file.write_text("x"))))
+        patch("corridoor.winapi.is_admin", lambda: False)
+        self.running_programs = True  # answer of the fake process list
+        patch("corridoor.winapi.process_running",
+              lambda image: self.running_programs)
         patch("corridoor.winapi.kill_on_close_job",
               lambda: contextlib.nullcontext(lambda process: None))
         self.ping_reply = True

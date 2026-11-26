@@ -2,11 +2,12 @@
 
 ![Settings window](images/settings.png)
 
-The window has three parts, top to bottom:
+The window has two columns. On the left, top to bottom:
 
 1. **Tabs** with the settings: General, VPN, SSH, HopToDesk, FileZilla, Advanced.
 2. **Three boxes with actions**, each with one job (see [below](#settings-checks-pipes-what-is-what)).
-3. The **log** of whatever is running.
+
+On the right, over the full height, is the **log** of whatever is running.
 
 ## Tab: General
 
@@ -39,6 +40,7 @@ You only need the paths of the programs you allow.
 | Setting | Description |
 |---|---|
 | SSH port / user / password | login data; the password may stay empty when a key is used |
+| Max. PuTTY windows at once | 1 to 10, default **4**. HopToDesk and FileZilla are always limited to one session each. |
 | SSH key `.ppk` | optional private key. Only its path is stored. |
 
 With a passphrase-protected key, the non-interactive login test fails.
@@ -63,8 +65,17 @@ asks for the password itself, so Corridoor never gives it one and it never appea
 a command line. If you use a key, add it in FileZilla (**Settings > SFTP**). Opening
 an sftp address from the command line should be verified with your FileZilla version.
 
+The tests check the SSH port and, with an SSH user, start the server's `sftp` subsystem
+with `plink.exe` (from the PuTTY folder) and close it at once. That proves the login
+and that `sshd` offers SFTP; without `plink.exe` this step only warns.
+
 Like HopToDesk, FileZilla usually hands the request over to a running instance, so
-**Close session** only removes it from the list; close the FileZilla window yourself.
+Corridoor cannot close it: **Close session** only removes the row from the list; close
+the FileZilla window yourself. The row also **leaves the list by itself** a few
+seconds after the last `filezilla.exe` of your Windows session has ended (checked every
+2 seconds, not during the first 5). If you already had FileZilla open, the row stays
+until that FileZilla is closed. HopToDesk is watched the same way, but it often keeps
+a background process with the same name, and then its row stays until that ends.
 
 ## Tab: Advanced
 
@@ -74,8 +85,20 @@ Like HopToDesk, FileZilla usually hands the request over to a running instance, 
 | VPN credentials via pipe | the same for the VPN user name and password |
 | SSH password via pipe | the same for the password read by PuTTY and plink |
 | Log detail | `info` (default) or `debug` |
+| Start PuTTY, HopToDesk and FileZilla without administrator rights | default **on** |
 
 You normally do not tick the pipe boxes by hand; the **Pipe test** does it.
+
+### Programs without administrator rights
+
+Corridoor needs administrator rights for the VPN (routes, the network adapter), but
+the programs it opens for you do not. With this box ticked they run as you, with
+normal rights, like a program started by a double click: Windows' limited twin of your
+token is used, or, if there is none, a restricted copy of it. OpenVPN and the checks
+(plink) keep their rights. Untick it only if a program cannot be started that way; the
+error in the log tells. There is never an automatic fallback to administrator rights.
+A PuTTY started this way reads its password file as your own user, so that file is
+readable by you as well (see [Security](security.md)).
 
 ### Logging
 
@@ -86,6 +109,17 @@ HopToDesk, FileZilla), process ids, job object and mutex events, pipe connection
 ping output, routing lookups, the SSH banner, the answer of the remote HopToDesk
 probe, the commands to the session list, and the cleanup. Secrets are logged only as a
 length and the path of their file or pipe, never as text.
+
+`info` shows OpenVPN's own output only where it matters (errors, warnings, TLS and
+authentication lines, routes, the "Initialization Sequence Completed" line); the other
+dozens of lines are `debug`.
+
+**Live control.** Above every log there is a **Detail** box (`info` or `debug`) and a
+**Filter** field. Detail takes effect at once for the running program, without saving
+(debug lines that were not recorded earlier cannot appear afterwards). The filter shows
+only the lines that contain the typed text (case does not matter) and changes as you
+type. The window keeps the last 5000 lines, so you can change the filter back and forth.
+**Export log** writes what is shown at that moment.
 
 The level applies as soon as you select **Save**, also to a session that is already
 running. The file `corridoor.log` gets the same detail. Switch back to `info` when
@@ -116,7 +150,7 @@ A test does not change how secrets are handled. It connects (or probes) and repo
 
 - **Quick test**: saves, then connects the VPN once and checks every enabled client:
   programs, profile, name resolution, VPN server, VPN connection, ping, SSH and
-  HopToDesk ports, SSH login. Stops at the first failure.
+  HopToDesk ports, SSH login, SFTP for FileZilla. Stops at the first failure.
 - **Diagnostics**: runs *all* checks even after a failure (only the dependent ones
   are skipped), includes the route change, and prints a summary. If SSH is enabled
   with a user name it also logs in and inspects HopToDesk on the remote Linux machine

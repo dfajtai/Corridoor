@@ -93,14 +93,15 @@ session opens. The window then lists the sessions:
 
 | Button | Effect |
 |---|---|
-| Add SSH session | opens another PuTTY window with the saved SSH settings (up to 10) |
+| Add SSH session | opens another PuTTY window with the saved SSH settings (up to the limit of the SSH tab, 4 by default) |
 | Add HopToDesk session | opens HopToDesk (only one; disabled while it is listed) |
 | Add FileZilla session | opens FileZilla on the target over SFTP (only one; FileZilla asks for the password) |
 | Close session | closes the selected session; the VPN and the others stay |
 | Disconnect (or the window's X) | closes all sessions and the VPN |
 
 A PuTTY window you close yourself leaves the list. The VPN stays up even when the
-list is empty, until you disconnect. HopToDesk cannot be closed by Corridoor (it may
-belong to a HopToDesk instance that was already running): **Close session** only
-removes it from the list, so close its window yourself. **Disconnect** cuts the VPN,
-which ends the HopToDesk session anyway. FileZilla behaves the same way.
+list is empty, until you disconnect. HopToDesk and FileZilla cannot be closed by
+Corridoor (they may belong to an instance that was already running): **Close session**
+only removes the row, so close their windows yourself. Their rows also leave the list
+once no `hoptodesk.exe` / `filezilla.exe` of your Windows session runs any more.
+**Disconnect** cuts the VPN, which ends the sessions anyway.

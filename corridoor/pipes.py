@@ -1,8 +1,9 @@
 """One-way named pipes that hand a secret to exactly one child process.
 
 The pipe replaces a temporary file: the secret never touches the disk. Only
-Administrators and SYSTEM may open it, and data is written only to the process
-that was announced with :meth:`SecretPipe.allow`.
+Administrators and SYSTEM (and, if given, one more user, so that a program
+started without admin rights can read it) may open it, and data is written only
+to the process that was announced with :meth:`SecretPipe.allow`.
 """
 
 from __future__ import annotations
@@ -33,14 +34,31 @@ class SecurityAttributes(ctypes.Structure):
                 ("inherit", wintypes.BOOL)]
 
 
+def descriptor_text(reader_sid: Optional[str] = None) -> str:
+    """Return the access rules of a pipe as an SDDL string.
+
+    Args:
+        reader_sid: SID (text form) of a user who may also read the pipe.
+    """
+    return SDDL + (f"(A;;GR;;;{reader_sid})" if reader_sid else "")
+
+
 class SecretPipe:
     """Serve the same bytes to every connection of one allowed process.
 
     Serving more than once matters: a program may open its "file" several times.
     """
 
-    def __init__(self, data: bytes) -> None:
-        """Prepare a pipe with an unpredictable name; nothing is created yet."""
+    def __init__(self, data: bytes, reader_sid: Optional[str] = None) -> None:
+        """Prepare a pipe with an unpredictable name; nothing is created yet.
+
+        Args:
+            data: The bytes served to the allowed process.
+            reader_sid: SID of the user the reading program runs as, when that
+                program has no administrator rights. Without it only
+                Administrators and SYSTEM can open the pipe.
+        """
+        self._reader_sid = reader_sid
         self.path: str = rf"\\.\pipe\corridoor-{secrets.token_hex(16)}"
         self.delivered: bool = False  # True once the allowed process got all data
         self._data = data
@@ -74,7 +92,7 @@ class SecretPipe:
         convert.argtypes = [wintypes.LPCWSTR, dword,
                             ctypes.POINTER(ctypes.c_void_p), pointer]
         descriptor = ctypes.c_void_p()
-        if not convert(SDDL, 1, ctypes.byref(descriptor), None):
+        if not convert(descriptor_text(self._reader_sid), 1, ctypes.byref(descriptor), None):
             raise ctypes.WinError(ctypes.get_last_error())
         # The few bytes of the descriptor are released when the process ends.
         self._attributes = SecurityAttributes(

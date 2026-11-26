@@ -53,6 +53,21 @@ class LevelTest(SessionTestCase):
         store.apply_log_level("DEBUG")  # the case does not matter
         self.assertEqual(self.logger_level(), logging.DEBUG)
 
+    def test_openvpn_chatter_is_debug_only(self) -> None:
+        """At info only the OpenVPN lines that matter are shown."""
+        self.fake_openvpn(mode="noisy")
+        self.assertTrue(self.new_session().run_test())
+        self.assertIn("openvpn: TLS: Initial packet", self.log_text())
+        self.assertIn("openvpn: Initialization Sequence Completed", self.log_text())
+        self.assertNotIn("library versions", self.log_text())
+        self.assertNotIn("OpenVPN 2.7 fake build", self.log_text())
+
+    def test_openvpn_chatter_appears_at_debug(self) -> None:
+        self.fake_openvpn(mode="noisy")
+        logging.getLogger("corridoor").setLevel(logging.DEBUG)
+        self.assertTrue(self.new_session().run_test())
+        self.assertIn("library versions", self.log_text())
+
     def test_info_hides_the_details(self) -> None:
         self.assertTrue(self.new_session().run_test())
         self.assertNotIn("starting OpenVPN in", self.log_text())

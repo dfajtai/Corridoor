@@ -35,6 +35,12 @@ from .settings import Settings
 
 # OpenVPN prints this line once the tunnel is up.
 READY_MARKER: str = "Initialization Sequence Completed"
+# OpenVPN prints dozens of lines; only those that matter are shown at the info
+# level (the rest is debug). Lower case fragments.
+VPN_NEWS: tuple[str, ...] = (
+    "initialization sequence completed", "error", "fail", "warn", "auth", "tls",
+    "refused", "denied", "cannot", "exiting", "sigterm", "route",
+)
 VPN_TIMEOUT: float = 60.0   # seconds to wait for the tunnel
 SSH_TIMEOUT: float = 30.0   # seconds for one non-interactive plink call
 TCP_TIMEOUT: float = 5.0    # seconds for a TCP reachability probe
@@ -149,12 +155,16 @@ class Session:
             stream.write(content)
         return path
 
-    def secret(self, content: str, use_pipe: bool) -> Secret:
+    def secret(self, content: str, use_pipe: bool,
+               readable_by_user: bool = False) -> Secret:
         """Offer secret content to a child process.
 
         Args:
             content: Text the child process has to read.
             use_pipe: Use a named pipe instead of a temporary file.
+            readable_by_user: The child runs without administrator rights, so
+                the file (or pipe) must also be readable by the current user.
+                Nobody else gets access.
 
         Returns:
             The path to give to the program and the announcer to call with the
@@ -162,11 +172,14 @@ class Session:
         """
         log.debug("secret (%d characters) via %s", len(content),
                   "named pipe" if use_pipe else "temporary file")  # never the text
+        reader = winapi.user_sid() if readable_by_user else None
         if not use_pipe:
             path = self.temp_file(content)
+            if reader:
+                winapi.grant_read(path, reader)
             return Secret(str(path), ignore_process_id,
                           lambda: path.unlink(missing_ok=True))
-        pipe = SecretPipe(content.encode("utf-8"))
+        pipe = SecretPipe(content.encode("utf-8"), reader)
         pipe.start()
         self.pipes.append(pipe)
         log.debug("  pipe %s", pipe.path)
@@ -328,7 +341,10 @@ class Session:
             """Drain the output (a full pipe would block OpenVPN) and log it."""
             assert process.stdout is not None
             for line in process.stdout:
-                log.info("  openvpn: %s", line.rstrip())
+                text = line.rstrip()
+                news = any(fragment in text.lower() for fragment in VPN_NEWS)
+                log.log(logging.INFO if news else logging.DEBUG,
+                        "  openvpn: %s", text)
                 if "AUTH_FAILED" in line:
                     self.auth_failed = True
                 for fragment, hint in VPN_HINTS.items():
@@ -421,14 +437,26 @@ class Session:
         """Return the PuTTY / plink arguments selecting the private key, if any."""
         return ["-i", self.settings.ssh_key] if self.settings.ssh_key else []
 
-    def ssh_secret(self) -> Optional[Secret]:
-        """Offer the SSH password to PuTTY / plink, or None if there is none."""
+    def ssh_secret(self, readable_by_user: bool = False) -> Optional[Secret]:
+        """Offer the SSH password to PuTTY / plink, or None if there is none.
+
+        Args:
+            readable_by_user: PuTTY runs without admin rights (plink never does).
+        """
         if not self.settings.ssh_password:
             return None
-        return self.secret(self.settings.ssh_password + "\n", self.settings.pipe_ssh)
+        return self.secret(self.settings.ssh_password + "\n", self.settings.pipe_ssh,
+                           readable_by_user)
 
-    def ssh_command(self, target_ip: str, remote_command: str) -> str:
+    def ssh_command(self, target_ip: str, remote_command: str,
+                    subsystem: bool = False) -> str:
         """Run a command on the target with plink, without any user interaction.
+
+        Args:
+            target_ip: Address of the target inside the VPN.
+            remote_command: The command, or with ``subsystem`` the name of the
+                SSH subsystem (``sftp``).
+            subsystem: Start an SSH subsystem instead of a command.
 
         Returns:
             The standard output of the remote command.
@@ -438,8 +466,8 @@ class Session:
             subprocess.TimeoutExpired: If it takes longer than ``SSH_TIMEOUT``.
         """
         plink = Path(self.settings.putty_exe).with_name("plink.exe")
-        command = [str(plink), "-ssh", "-batch", "-P", self.settings.port,
-                   *self.key_option()]
+        command = [str(plink), "-ssh", "-batch", *(["-s"] if subsystem else []),
+                   "-P", self.settings.port, *self.key_option()]
         password = self.ssh_secret()
         if password:
             command += ["-pwfile", password.path]
@@ -472,6 +500,27 @@ class Session:
         """Log in non-interactively with plink and run ``exit``."""
         self.ssh_command(target_ip, "exit")
 
+    def check_sftp(self, target_ip: str) -> None:
+        """Check that the target offers SFTP and accepts the login (for FileZilla).
+
+        Starts the ``sftp`` subsystem with plink and closes it at once, which is
+        what FileZilla does first. It proves the SSH login and that the server
+        has an SFTP subsystem, not that FileZilla itself works.
+
+        Raises:
+            StepError: If the login fails or the server has no SFTP subsystem.
+        """
+        plink = Path(self.settings.putty_exe).with_name("plink.exe")
+        if not plink.exists():
+            self.warn("plink.exe (next to putty.exe) not found, SFTP not tested")
+            return
+        try:
+            self.ssh_command(target_ip, "sftp", subsystem=True)
+        except StepError as error:
+            raise StepError(
+                f"{error}\nCheck the SSH user and password, and that the server "
+                "has an SFTP subsystem (\"Subsystem sftp\" in sshd_config).") from error
+
     def launch_putty(self, target_ip: str
                      ) -> tuple[subprocess.Popen, Optional[Secret]]:
         """Start one PuTTY window; the caller watches and closes it.
@@ -491,12 +540,12 @@ class Session:
             login = f"{self.settings.ssh_user}@{target_ip}"
         command = [self.settings.putty_exe, "-ssh", login, "-P", self.settings.port,
                    *self.key_option()]
-        password = self.ssh_secret()
+        password = self.ssh_secret(readable_by_user=self.limited())
         if password:
             command += ["-pwfile", password.path]
         log.debug("PuTTY: %s", command)
         try:
-            putty = subprocess.Popen(command)
+            putty = self.start_client(command)
             log.debug("PuTTY process id %d", putty.pid)
             if password:
                 password.announce(putty.pid)
@@ -507,6 +556,37 @@ class Session:
                 password.release()
             raise
         return putty, password
+
+    # --- Programs opened for the user ---
+
+    def limited(self) -> bool:
+        """Return True if clients are to be started without administrator rights.
+
+        Only an elevated program has rights to drop; otherwise this is moot.
+        """
+        return self.settings.clients_without_admin and winapi.is_admin()
+
+    def start_client(self, command: list[str]) -> subprocess.Popen:
+        """Start PuTTY, HopToDesk or FileZilla, without admin rights if configured.
+
+        Corridoor is elevated because OpenVPN needs it; the programs it opens
+        for the user do not, and a program that runs as an administrator is a
+        bigger target. When the setting is on and the limited start fails, the
+        program is **not** started with admin rights as a silent fallback.
+
+        Raises:
+            OSError: If the program cannot be started.
+        """
+        if not self.limited():
+            return subprocess.Popen(command)
+        log.debug("starting %s without administrator rights", Path(command[0]).name)
+        try:
+            return winapi.start_limited(command)
+        except OSError as error:
+            raise OSError(
+                f"{error} (to start it with administrator rights, untick \"Start "
+                "programs without administrator rights\" on the Advanced tab)"
+            ) from error
 
     # --- FileZilla ---
 
@@ -525,7 +605,7 @@ class Session:
         url = f"sftp://{login}{target_ip}:{self.settings.port}"
         command = [self.settings.filezilla_exe, "-l", "interactive", url]
         log.debug("FileZilla: %s", command)
-        process = subprocess.Popen(command)
+        process = self.start_client(command)
         log.debug("FileZilla process id %d", process.pid)
         log.info("  Enter the password in FileZilla.")
         return process
@@ -598,7 +678,7 @@ class Session:
         # No password argument: "--password" would change this computer's setting.
         command = [self.settings.hoptodesk_exe, "--connect", peer]
         log.debug("HopToDesk: %s", command)
-        process = subprocess.Popen(command)
+        process = self.start_client(command)
         log.debug("HopToDesk process id %d", process.pid)
         log.info("  Enter the password in HopToDesk.")
         return process
@@ -631,10 +711,11 @@ class Session:
         # FileZilla talks SFTP through the SSH port, so it needs the port test too.
         test_port = test_ssh or "filezilla" in clients
         login_test = test_ssh and bool(self.settings.ssh_user)
+        test_sftp = "filezilla" in clients and bool(self.settings.ssh_user)
         test_hop = "hoptodesk" in clients
         self.step_number = 0
         # Programs, profile, name, VPN server, VPN, ping + the client checks.
-        self.step_count = 6 + test_port + login_test + test_hop
+        self.step_count = 6 + test_port + login_test + test_sftp + test_hop
         log.info("--- Test started ---")
         self.log_start("test")
         try:
@@ -663,6 +744,12 @@ class Session:
                                 self.check_login(target_ip)
                         else:
                             log.info("No SSH user set, login test skipped.")
+                    if "filezilla" in clients:
+                        if test_sftp:
+                            with self.step("Testing SFTP for FileZilla"):
+                                self.check_sftp(target_ip)
+                        else:
+                            log.info("No SSH user set, SFTP test skipped.")
                     if test_hop:
                         port = self.settings.hoptodesk_port
                         with self.step(f"Reaching HopToDesk port {port}"):

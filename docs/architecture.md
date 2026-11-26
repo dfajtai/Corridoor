@@ -7,7 +7,7 @@ from modules listed above it.
 |---|---|
 | `main.py` | entry point: checks the environment, opens the window of the requested mode |
 | `corridoor/errors.py` | `StepError` (a step failed) and `Cancelled` (the user stopped) |
-| `corridoor/winapi.py` | **the only code that talks to Windows**: DPAPI, mutex, exit event, job object |
+| `corridoor/winapi.py` | **the only code that talks to Windows**: DPAPI, mutex, exit event, job object, starting programs without admin rights |
 | `corridoor/version.py` | the version `<VERSION>.<commit id>` and the window title |
 | `corridoor/hoptodesk.py` | HopToDesk port, minimum version, the remote probe and its parser |
 | `corridoor/settings.py` | the `Settings` dataclass |
@@ -40,7 +40,7 @@ is held while a process is started or stopped.
 
 ## Sessions on one connection
 
-- Up to `MAX_SSH` (10) SSH sessions, at most one HopToDesk session and at most one
+- Up to `max_ssh` SSH sessions (setting, default 4, at most `MAX_SSH` = 10), at most one HopToDesk session and at most one
   FileZilla session (`sftp://user@host:port`, started with
   `-l interactive`, so it asks for the password itself).
 - Every PuTTY window has its own password secret (file or pipe), released when

@@ -24,6 +24,7 @@ class Settings:
     # --- SSH (PuTTY) ---
     use_ssh: bool = True
     port: str = "22"
+    max_ssh: str = "4"            # PuTTY windows at the same time (1 to 10)
     ssh_user: str = ""
     ssh_password: str = ""
     ssh_key: str = ""             # optional .ppk; only the path is stored
@@ -37,6 +38,10 @@ class Settings:
     # --- FileZilla (file transfer over SFTP, through the SSH port) ---
     use_filezilla: bool = False
     filezilla_exe: str = r"C:\Program Files\FileZilla FTP Client\filezilla.exe"
+
+    # --- Programs opened for the user (PuTTY, HopToDesk, FileZilla) ---
+    # Corridoor itself must be elevated (VPN); these programs need not be.
+    clients_without_admin: bool = True
 
     # --- Test features: named pipes instead of temporary files ---
     pipe_vpn_config: bool = False  # only used together with copy_profile

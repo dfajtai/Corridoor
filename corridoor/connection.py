@@ -3,7 +3,8 @@
 ``Connection.run`` brings the tunnel up and then serves a list of client
 sessions until the user disconnects:
 
-* any number of SSH sessions (one PuTTY window each, up to ``MAX_SSH``),
+* several SSH sessions (one PuTTY window each, up to the ``max_ssh`` setting,
+  4 by default and never more than ``MAX_SSH``),
 * at most one HopToDesk session,
 * at most one FileZilla session.
 
@@ -25,17 +26,23 @@ import subprocess
 import threading
 import time
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Optional
 
 from . import store, winapi
 from .errors import Cancelled, StepError
 from .session import Secret, Session
 
-MAX_SSH: int = 10          # SSH sessions at the same time
+MAX_SSH: int = 10          # hard upper limit of the ``max_ssh`` setting
 POLL: float = 0.2          # seconds between two looks at the sessions
 CLOSE_TIMEOUT: float = 5.0  # seconds a PuTTY window gets before it is killed
 # PuTTY reads the password file while parsing its command line; delete it after.
 PWFILE_LIFETIME: float = 10.0
+# HopToDesk and FileZilla hand the request to a running instance and exit; such a
+# session is over when no program of that name runs any more. Do not judge in the
+# first seconds, and look only now and then (the process list is read each time).
+START_GRACE: float = 5.0
+WATCH_INTERVAL: float = 2.0
 
 SSH: str = "ssh"
 HOPTODESK: str = "hoptodesk"
@@ -55,10 +62,13 @@ class ClientSession:
         kind: ``"ssh"``, ``"hoptodesk"`` or ``"filezilla"``.
         process: The launched process. For HopToDesk and FileZilla it may
             already be gone while the session still runs (they hand the request
-            to a running instance), so it is never used to detect the end.
+            to a running instance), so its end alone says nothing.
         started: ``time.monotonic()`` at the start.
         password: The secret given to PuTTY, if any.
         password_deleted: True once the password file has been removed.
+        image: File name of the HopToDesk or FileZilla program (``filezilla.exe``),
+            used to see whether it still runs.
+        checked: ``time.monotonic()`` of the last look at the process list.
     """
 
     number: int
@@ -67,6 +77,8 @@ class ClientSession:
     started: float
     password: Optional[Secret] = None
     password_deleted: bool = False
+    image: str = ""
+    checked: float = 0.0
 
     @property
     def title(self) -> str:
@@ -78,8 +90,25 @@ class ClientSession:
         return f"SSH #{self.number}"
 
     def ended(self) -> bool:
-        """Return True if the client is known to be gone (PuTTY only)."""
-        return self.kind == SSH and self.process.poll() is not None
+        """Return True if the client is known to be gone.
+
+        PuTTY: its process has ended. HopToDesk and FileZilla: the process that
+        was started has ended **and** no program with that file name runs any
+        more (they usually hand the request over to a running instance). If the
+        process list cannot be read, the session is assumed to be alive.
+        """
+        if self.kind == SSH:
+            return self.process.poll() is not None
+        if not self.image or self.process.poll() is None:
+            return False
+        now = time.monotonic()
+        if now - self.started < START_GRACE or now - self.checked < WATCH_INTERVAL:
+            return False
+        self.checked = now
+        try:
+            return not winapi.process_running(self.image)
+        except OSError:
+            return False
 
 
 class Connection:
@@ -108,10 +137,18 @@ class Connection:
         """Return True if a session of this kind may be added now.
 
         The tunnel must be up, the client must be switched on in the settings,
-        and the limits must not be reached: one HopToDesk, one FileZilla,
-        ``MAX_SSH`` SSH.
+        and the limits must not be reached: one HopToDesk, one FileZilla and
+        :meth:`ssh_limit` SSH sessions.
         """
         return self.state == "up" and self._allowed(kind)
+
+    def ssh_limit(self) -> int:
+        """Return how many SSH sessions may run at once (``max_ssh``, 1 to MAX_SSH)."""
+        try:
+            wanted = int(self.session.settings.max_ssh)
+        except ValueError:
+            wanted = 4
+        return max(1, min(wanted, MAX_SSH))
 
     def add_ssh(self) -> None:
         """Ask for a new PuTTY window (started by the connection thread)."""
@@ -221,7 +258,9 @@ class Connection:
         """Start a client session if the limits and the programs allow it."""
         if not self._allowed(kind):
             log.debug("not allowed: sessions now %s", self.sessions())
-            log.warning("Cannot add another %s session.", KIND_NAMES.get(kind, kind))
+            limit = self.ssh_limit() if kind == SSH else 1
+            log.warning("Cannot add another %s session (limit: %d).",
+                        KIND_NAMES.get(kind, kind), limit)
             return
         session = self.session
         secret: Optional[Secret] = None
@@ -236,8 +275,12 @@ class Connection:
         except (StepError, OSError) as error:
             log.error("Could not start the %s session: %s", kind, error)
             return
+        settings = session.settings
+        program = {HOPTODESK: settings.hoptodesk_exe,
+                   FILEZILLA: settings.filezilla_exe}.get(kind, "")
         client = ClientSession(self._next_number, kind, process,
-                               time.monotonic(), secret)
+                               time.monotonic(), secret,
+                               image=Path(program).name if program else "")
         self._next_number += 1
         with self._lock:
             self._clients.append(client)
@@ -250,7 +293,7 @@ class Connection:
             kinds = [client.kind for client in self._clients]
         settings = self.session.settings
         if kind == SSH:
-            return settings.use_ssh and kinds.count(SSH) < MAX_SSH
+            return settings.use_ssh and kinds.count(SSH) < self.ssh_limit()
         enabled = {HOPTODESK: settings.use_hoptodesk, FILEZILLA: settings.use_filezilla}
         return enabled.get(kind, False) and kind not in kinds
 
@@ -286,7 +329,8 @@ class Connection:
             except subprocess.TimeoutExpired:
                 client.process.kill()
         # HopToDesk and FileZilla cannot be closed reliably (they may belong to
-        # a running instance), so they are only removed from the list.
+        # a running instance), so they are only removed from the list. Their
+        # rows also leave it on their own, see ClientSession.ended.
         log.info("%s closed.", client.title)
         self._remove(client)
 

@@ -9,6 +9,7 @@ venv/
 # (poetry.lock is meant to be committed)
 
 # Nuitka and build output
+build/
 *.build/
 *.dist/
 *.onefile-build/

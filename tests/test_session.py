@@ -69,6 +69,57 @@ class FileZillaCheckTest(SessionTestCase):
         self.assertNotIn("SSH login", self.log_text())
 
 
+class SftpCheckTest(SessionTestCase):
+    """FileZilla: the SFTP subsystem is started with plink and closed at once."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.arguments = self.work_dir / "plink_args"
+        self.fake("plink.exe", f"""
+            import json, sys
+            with open({str(self.arguments)!r}, "w") as stream:
+                json.dump(sys.argv[1:], stream)
+            """)
+        self.settings = replace(self.settings, use_ssh=False, use_filezilla=True)
+
+    def test_quick_test_starts_the_sftp_subsystem(self) -> None:
+        self.assertTrue(self.new_session().run_test())
+        import json
+        arguments = json.loads(self.arguments.read_text())
+        self.assertIn("-s", arguments)
+        self.assertEqual(arguments[-2:], ["x@127.0.0.1", "sftp"])
+        self.assertIn("Testing SFTP for FileZilla", self.log_text())
+        self.assertIn("[8/8]", self.log_text())  # the step is counted
+
+    def test_failure_names_the_likely_causes(self) -> None:
+        self.fake_plink(err="Server refused to start a subsystem", code=1)
+        self.assertFalse(self.new_session().run_test())
+        self.assertIn("SFTP subsystem", self.log_text())
+        self.assertIn("Server refused", self.log_text())
+
+    def test_without_a_user_name_it_is_skipped(self) -> None:
+        self.assertTrue(self.new_session(
+            replace(self.settings, ssh_user="")).run_test())
+        self.assertIn("SFTP test skipped", self.log_text())
+        self.assertFalse(self.arguments.exists())
+
+    def test_without_plink_it_only_warns(self) -> None:
+        self.assertTrue(self.new_session(
+            replace(self.settings, putty_exe="/nonexistent")).run_test())
+        self.assertIn("SFTP not tested", self.log_text())
+
+    def test_diagnostics_list_the_check(self) -> None:
+        self.fake_openvpn(sleep=3)
+        self.assertTrue(self.new_session().diagnose())
+        self.assertIn("OK       SFTP for FileZilla", self.log_text())
+
+    def test_diagnostics_without_a_user_name(self) -> None:
+        self.fake_openvpn(sleep=3)
+        self.assertTrue(self.new_session(
+            replace(self.settings, ssh_user="")).diagnose())
+        self.assertIn("SFTP for FileZilla: not checked", self.log_text())
+
+
 class HopToDeskTest(SessionTestCase):
     """The HopToDesk client and its checks."""
 

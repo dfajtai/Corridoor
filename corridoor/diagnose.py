@@ -121,6 +121,13 @@ def run(session: "Session") -> bool:
                 if "ssh" in clients:
                     if settings.ssh_user:
                         check("SSH login", login, ("vpn",))
+                if "filezilla" in clients:
+                    if settings.ssh_user:
+                        check("SFTP for FileZilla",
+                              lambda: session.check_sftp(values["target"]), ("vpn",))
+                    else:
+                        log.info("--- SFTP for FileZilla: not checked, it needs "
+                                 "an SSH user name")
                 if "hoptodesk" in clients:
                     check("HopToDesk port",
                           lambda: session.check_hoptodesk_port(values["target"]),

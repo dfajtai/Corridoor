@@ -1,9 +1,11 @@
 """One VPN connection with several client sessions."""
 
+import subprocess
 import threading
 import time
 import unittest
 from dataclasses import replace
+from pathlib import Path
 from unittest import mock
 
 from corridoor import store
@@ -120,6 +122,42 @@ class SessionListTest(ConnectionTestCase):
             time.sleep(0.5)
             self.assertEqual(len(self.numbers()), 2)
             self.assertIn("Cannot add another SSH session", self.log_text())
+
+    def test_default_limit_is_four_ssh_windows(self) -> None:
+        connection = self.start()
+        self.assertEqual(connection.ssh_limit(), 4)
+        for _ in range(5):
+            connection.add_ssh()
+        self.wait_until(lambda: len(self.numbers()) == 4)
+        time.sleep(0.5)
+        self.assertEqual(len(self.numbers()), 4)
+        self.assertFalse(connection.can_add("ssh"))
+        self.assertIn("Cannot add another SSH session (limit: 4)", self.log_text())
+
+    def test_the_limit_is_a_setting(self) -> None:
+        connection = self.start(settings=replace(self.settings, max_ssh="2"))
+        self.assertEqual(connection.ssh_limit(), 2)
+        connection.add_ssh()
+        self.wait_until(lambda: len(self.numbers()) == 2)
+        self.assertFalse(connection.can_add("ssh"))
+
+    def test_unusable_limits_are_corrected(self) -> None:
+        connection = Connection(self.new_session())
+        for text, expected in (("x", 4), ("", 4), ("0", 1), ("-3", 1),
+                               ("99", 10), (" 7 ", 7)):
+            connection.session.settings = replace(self.settings, max_ssh=text)
+            self.assertEqual(connection.ssh_limit(), expected, text)
+
+    def test_hoptodesk_and_filezilla_stay_at_one(self) -> None:
+        settings = replace(self.settings, use_hoptodesk=True, use_filezilla=True)
+        connection = self.start(settings=settings)
+        connection.add_hoptodesk()
+        connection.add_filezilla()
+        self.wait_until(lambda: len(self.numbers()) == 3)
+        self.assertFalse(connection.can_add("hoptodesk"))
+        self.assertFalse(connection.can_add("filezilla"))
+        self.wait_for(self.marker)  # let the fake programs finish before cleanup
+        self.wait_for(self.filezilla_marker)
 
     def test_ssh_can_be_switched_off(self) -> None:
         connection = self.start(settings=replace(self.settings, use_hoptodesk=True))
@@ -242,6 +280,167 @@ class FileZillaTest(ConnectionTestCase):
         time.sleep(0.5)
         self.assertEqual(self.titles(), ["SSH #1"])
         self.assertEqual(connection.state, "up")
+
+
+class WatchedClientsTest(ConnectionTestCase):
+    """HopToDesk and FileZilla leave the list when the program is gone."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.settings = replace(self.settings, use_hoptodesk=True, use_filezilla=True)
+        store.save_settings(self.settings)
+        for name, value in (("START_GRACE", 0.0), ("WATCH_INTERVAL", 0.0)):
+            patcher = mock.patch(f"corridoor.connection.{name}", value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def open_both(self) -> Connection:
+        connection = self.start(settings=self.settings)
+        connection.add_hoptodesk()
+        connection.add_filezilla()
+        self.wait_until(lambda: len(self.numbers()) == 3)
+        self.wait_for(self.marker)
+        self.wait_for(self.filezilla_marker)
+        return connection
+
+    def test_the_rows_stay_while_the_programs_run(self) -> None:
+        self.open_both()
+        time.sleep(0.8)
+        self.assertEqual(self.titles(), ["SSH #1", "HopToDesk", "FileZilla"])
+
+    def test_the_rows_leave_when_the_programs_are_gone(self) -> None:
+        connection = self.open_both()
+        self.running_programs = False
+        self.wait_until(lambda: self.titles() == ["SSH #1"])
+        self.assertIn("FileZilla closed.", self.log_text())
+        self.assertIn("HopToDesk closed.", self.log_text())
+        self.assertTrue(connection.can_add("filezilla"))  # can be opened again
+
+    def test_the_program_is_found_by_its_file_name(self) -> None:
+        asked: list[str] = []
+        self.running_programs = True
+        with mock.patch("corridoor.winapi.process_running",
+                        lambda image: asked.append(image) or True):
+            self.open_both()
+            time.sleep(0.5)
+        self.assertEqual(set(asked), {"hoptodesk.exe", "filezilla.exe"})
+
+    def test_a_young_session_is_not_judged(self) -> None:
+        with mock.patch("corridoor.connection.START_GRACE", 60.0):
+            self.running_programs = False
+            self.open_both()
+            time.sleep(0.8)
+            self.assertEqual(len(self.numbers()), 3)
+
+    def test_an_unreadable_process_list_keeps_the_row(self) -> None:
+        with mock.patch("corridoor.winapi.process_running", side_effect=OSError("no")):
+            self.open_both()
+            time.sleep(0.8)
+            self.assertEqual(len(self.numbers()), 3)
+
+    def test_a_running_launcher_process_counts_as_open(self) -> None:
+        """If the started process itself still runs, the list is not even read."""
+        self.fake("filezilla.exe", "import time; time.sleep(30)")
+        connection = self.start(settings=self.settings)
+        self.running_programs = False
+        connection.add_filezilla()
+        self.wait_until(lambda: len(self.numbers()) == 2)
+        time.sleep(0.8)
+        self.assertEqual(len(self.numbers()), 2)
+
+
+class LimitedClientsTest(ConnectionTestCase):
+    """PuTTY, HopToDesk and FileZilla start without admin rights."""
+
+    SID = "S-1-5-21-1-2-3-1001"
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.limited_commands: list[list[str]] = []
+        self.grants: list[tuple] = []
+        self.use_fake_pipes()
+        self.settings = replace(self.settings, use_hoptodesk=True, use_filezilla=True,
+                                ssh_password="SSHsecret456")
+        store.save_settings(self.settings)
+
+        def start_limited(command):
+            # Behaves like the real one for the tests: the program just runs.
+            self.limited_commands.append(list(command))
+            return subprocess.Popen(command)
+
+        for target, value in (
+                ("corridoor.winapi.is_admin", lambda: True),
+                ("corridoor.winapi.start_limited", start_limited),
+                ("corridoor.winapi.user_sid", lambda: self.SID),
+                ("corridoor.winapi.grant_read",
+                 lambda path, sid: self.grants.append((path, sid)))):
+            patcher = mock.patch(target, value)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def programs(self) -> list[str]:
+        """Names of the programs that were started without admin rights."""
+        return [Path(command[0]).name for command in self.limited_commands]
+
+    def test_every_client_is_started_limited(self) -> None:
+        connection = self.start()
+        connection.add_hoptodesk()
+        connection.add_filezilla()
+        self.wait_until(lambda: len(self.numbers()) == 3)
+        self.assertEqual(self.programs(), ["putty.exe", "hoptodesk.exe", "filezilla.exe"])
+
+    def test_the_password_file_is_readable_by_the_user(self) -> None:
+        self.start()
+        self.wait_until(lambda: len(self.grants) == 1)
+        path, sid = self.grants[0]
+        self.assertEqual(sid, self.SID)
+        self.assertEqual(path.parent, self.secret_dir)
+
+    def test_the_password_pipe_is_readable_by_the_user(self) -> None:
+        settings = replace(self.settings, pipe_ssh=True)
+        self.start(settings=settings)
+        self.assertEqual([pipe.reader_sid for pipe in FakePipe.made], [self.SID])
+        self.assertEqual(self.grants, [])
+
+    def test_the_vpn_and_the_checks_stay_elevated(self) -> None:
+        """OpenVPN and plink are not started through the limited path."""
+        self.start()
+        self.new_session().check_login("127.0.0.1")
+        self.assertNotIn("openvpn", self.programs())
+        self.assertNotIn("plink.exe", self.programs())
+        self.assertEqual(len(self.grants), 1)  # only the one of the PuTTY window
+
+    def test_switched_off_starts_with_admin_rights(self) -> None:
+        settings = replace(self.settings, clients_without_admin=False)
+        self.start(settings=settings)
+        self.assertEqual(self.limited_commands, [])
+        self.assertEqual(self.grants, [])
+
+    def test_without_admin_rights_there_is_nothing_to_drop(self) -> None:
+        with mock.patch("corridoor.winapi.is_admin", lambda: False):
+            self.start()
+        self.assertEqual(self.limited_commands, [])
+
+    def test_a_failure_is_reported_and_never_falls_back_to_admin(self) -> None:
+        connection = self.start()
+        with mock.patch("corridoor.winapi.start_limited",
+                        side_effect=OSError("no token")):
+            connection.add_filezilla()
+            self.wait_until(lambda: "Could not start the filezilla session"
+                            in self.log_text())
+        self.assertIn("no token", self.log_text())
+        self.assertIn("without administrator rights", self.log_text())
+        self.assertFalse(self.filezilla_marker.exists())  # not started elevated
+        self.assertEqual(connection.state, "up")
+        self.assertEqual(self.titles(), ["SSH #1"])
+
+    def test_a_failed_grant_stops_that_session_only(self) -> None:
+        connection = self.start()
+        with mock.patch("corridoor.winapi.grant_read", side_effect=OSError("denied")):
+            connection.add_ssh()
+            self.wait_until(lambda: "Could not start the ssh session" in self.log_text())
+        self.assertEqual(connection.state, "up")
+        self.assertEqual(self.titles(), ["SSH #1"])
 
 
 class DisconnectTest(ConnectionTestCase):
