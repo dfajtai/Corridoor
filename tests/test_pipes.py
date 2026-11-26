@@ -1,9 +1,8 @@
-"""The named pipe self-test and sessions that use pipes."""
+"""The named pipe self-test."""
 
 import unittest
 from dataclasses import replace
 
-from corridoor import store
 from corridoor.pipetest import vpn_variants
 from tests.support import FakePipe, SessionTestCase
 
@@ -96,23 +95,6 @@ class PipeTestTest(SessionTestCase):
     def test_cancel_changes_nothing(self) -> None:
         self.fake_openvpn(mode="hang", sleep=3)
         self.assertIsNone(self.pipes(stop=self.stop_after(0.5)))
-
-
-class RunWithPipesTest(SessionTestCase):
-    """A real session with all three pipes switched on."""
-
-    def test_secrets_go_through_pipes_not_files(self) -> None:
-        self.use_fake_pipes()
-        self.fake_openvpn(count_calls=True)
-        settings = replace(self.settings, pipe_vpn_config=True,
-                           pipe_vpn_auth=True, pipe_ssh=True)
-        store.save_settings(settings)
-        self.assertTrue(self.new_session(settings).run(test_only=False))
-        calls = self.openvpn_calls.read_text()
-        self.assertEqual(calls.count("pipe-"), 2)  # profile and credentials
-        self.assertEqual(len(FakePipe.made), 3)    # ... and the SSH password
-        self.assertTrue(all(pipe.closed for pipe in FakePipe.made))
-        self.assert_no_secret_files()
 
 
 if __name__ == "__main__":

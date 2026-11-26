@@ -14,21 +14,41 @@ from modules listed above it.
 | `corridoor/net.py` | `ping` and the routing table lookup |
 | `corridoor/pipes.py` | `SecretPipe`: a one-way named pipe for exactly one process |
 | `corridoor/store.py` | the administrator-only folder: settings, profile copy, log |
-| `corridoor/session.py` | `Session`: one job, its steps and its child processes |
+| `corridoor/session.py` | `Session`: the steps, the OpenVPN process, one-shot checks, launching PuTTY and HopToDesk |
+| `corridoor/connection.py` | `Connection`: the tunnel plus the list of client sessions |
 | `corridoor/diagnose.py` | the full diagnostics run, built on `Session` |
 | `corridoor/pipetest.py` | the named pipe self-test, built on `Session` |
-| `corridoor/gui.py` | Tkinter windows: `ConfigWindow` and `RunWindow` |
+| `corridoor/gui.py` | Tkinter windows: `ConfigWindow` and `HubWindow` |
 
 ## Data flow of a connection
 
 ```
-main.py ──► gui.RunWindow ──(thread)──► Session.run
+main.py ──► gui.HubWindow ──(thread)──► Connection.run
                                           │
    store.load_profile ◄───────────────────┤  1. programs, profile, name
    Session.vpn_tunnel ────────────────────┤  2. OpenVPN in a job object
-   Session.run_putty / run_hoptodesk ─────┘  3. the client, until disconnect
-                                             4. cleanup: pipes, temp files, VPN
+   Session.launch_putty / launch_hoptodesk┤  3. first session, then the list
+   command queue (add / close) ◄── GUI    ┤  4. serve until disconnect
+                                          └  5. close sessions, VPN, secrets
 ```
+
+`Connection.run` is the only code that starts, watches and stops client
+processes. The GUI thread sends commands (`add_ssh`, `add_hoptodesk`,
+`close_session`) through a queue and reads copies of the session list, so no lock
+is held while a process is started or stopped.
+
+## Sessions on one connection
+
+- Any number of SSH sessions (`MAX_SSH`, 10) and at most one HopToDesk session.
+- Every PuTTY window has its own password secret (file or pipe), released when
+  that window closes. A password *file* is also deleted after 10 seconds.
+- Closing a session never touches the VPN. **Disconnect** closes every session,
+  then asks OpenVPN to exit through the exit event.
+- PuTTY windows join the same kill-on-close **job object** as OpenVPN, so a crash
+  of the launcher ends them too. This is crash protection only; the normal close
+  is an explicit `terminate()`. HopToDesk is not in the job, because it may hand
+  the request over to an already running instance, so it is only listed and
+  removed from the list, never killed.
 
 The GUI never calls the logic directly from the Tk thread. A job runs on a
 background thread and reports only through the `corridoor` logger; the GUI moves
@@ -58,6 +78,7 @@ They run on any operating system. `tests/support.py` builds the environment:
 
 - the Windows functions are replaced (XOR instead of DPAPI, no mutex, no job object),
 - `store` points to a temporary folder,
+- the exit event is a file that the fake OpenVPN waits for,
 - OpenVPN, plink, PuTTY and HopToDesk are small Python scripts that
   `subprocess.Popen` starts with the interpreter,
 - a local socket greets like an SSH server.
@@ -66,8 +87,9 @@ They run on any operating system. `tests/support.py` builds the environment:
 |---|---|
 | `test_profile.py` | profile parsing, checking, bundling; HopToDesk helpers |
 | `test_store.py` | settings round trip, profile copy, leftovers |
-| `test_session.py` | connection test, real session, HopToDesk, diagnostics, remote probe |
-| `test_pipes.py` | pipe variants and fallbacks, sessions with pipes |
+| `test_session.py` | connection test, HopToDesk checks, diagnostics, remote probe |
+| `test_connection.py` | session list: add, close, limits, disconnect, secrets, a dying VPN |
+| `test_pipes.py` | pipe variants and fallbacks of the pipe test |
 | `test_gui.py` | window logic with a stub for Tkinter |
 
 The real Windows parts (DPAPI, the job object, the named pipe server, the

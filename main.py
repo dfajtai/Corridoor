@@ -62,7 +62,7 @@ def main() -> int:
         root.title(f"{TITLE} - settings")
         gui.ConfigWindow(root, settings or Settings())
     else:
-        gui.RunWindow(root, settings, "hoptodesk" if args.hoptodesk else "ssh")
+        gui.HubWindow(root, settings, "hoptodesk" if args.hoptodesk else "ssh")
     root.mainloop()
     return 0
 

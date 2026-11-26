@@ -20,7 +20,10 @@ Leftover temporary files from a killed session are removed at the next start.
   launcher and the client programs. A profile that is not copied stays your own file.
 - DPAPI binds the data to the Windows account that saved it.
 - Local storage cannot protect secrets from an attacker with administrator rights.
-- PuTTY and HopToDesk **run elevated**, because the launcher starts them.
+- PuTTY and HopToDesk **run elevated**, because the launcher starts them. Every PuTTY
+  window gets its own password secret, released when that window closes.
+- OpenVPN and all PuTTY windows are in a job object that Windows ends if the
+  launcher crashes.
 - Profiles containing `redirect-gateway`, `redirect-private`, `plugin` or `config`
   are rejected. User scripts are disabled (`--script-security 1`).
 - Keep the client programs, the key file, a non-copied profile and the build folder
@@ -29,7 +32,8 @@ Leftover temporary files from a killed session are removed at the next start.
 
 ## Limitations
 
-- Only one session at a time (SSH **or** HopToDesk).
+- One VPN connection and one target host at a time; on it up to 10 SSH sessions and
+  one HopToDesk session.
 - Only the target's IPv4 address is routed. Server-pushed routes and DNS settings
   are ignored.
 - Encrypted VPN private keys and challenge-based two-factor authentication are not

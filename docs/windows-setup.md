@@ -83,8 +83,20 @@ steps. Saved settings are kept (they live in a different folder).
 
 ## Daily use
 
-Start **Corridoor SSH** or **Corridoor HopToDesk**. To disconnect, close PuTTY or
-select **Disconnect**. In HopToDesk mode, only **Disconnect** closes the VPN; closing
-the HopToDesk window does not.
+Start **Corridoor SSH** or **Corridoor HopToDesk**. The VPN comes up and the first
+session opens. The window then lists the sessions:
 
-![SSH connecting](images/ssh-connecting.png)
+![Sessions window](images/sessions.png)
+
+| Button | Effect |
+|---|---|
+| Add SSH session | opens another PuTTY window with the saved SSH settings (up to 10) |
+| Add HopToDesk session | opens HopToDesk (only one; disabled while it is listed) |
+| Close session | closes the selected session; the VPN and the others stay |
+| Disconnect (or the window's X) | closes all sessions and the VPN |
+
+A PuTTY window you close yourself leaves the list. The VPN stays up even when the
+list is empty, until you disconnect. HopToDesk cannot be closed by Corridoor (it may
+belong to a HopToDesk instance that was already running): **Close session** only
+removes it from the list, so close its window yourself. **Disconnect** cuts the VPN,
+which ends the HopToDesk session anyway.

@@ -6,7 +6,7 @@ background thread. Tk is not thread safe, so the worker only logs; the GUI
 thread moves the records into the widget every 200 ms (:meth:`LogWindow.poll`).
 
 * :class:`ConfigWindow`  edit the settings, save, test, diagnose, pipe test
-* :class:`RunWindow`     connect at once and close after a successful session
+* :class:`HubWindow`     one VPN connection with a list of client sessions
 """
 
 import logging
@@ -18,6 +18,7 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 from typing import Callable, Optional
 
 from . import store
+from .connection import Connection
 from .session import Session
 from .settings import Settings
 
@@ -215,7 +216,7 @@ class ConfigWindow(LogWindow):
 
     def test(self) -> None:
         """Save, then run the connection test (stops at the first failure)."""
-        self.launch(self.test_button, lambda session: session.run(test_only=True))
+        self.launch(self.test_button, lambda session: session.run_test())
 
     def diagnose(self) -> None:
         """Save, then run all diagnostic checks and print a summary."""
@@ -280,23 +281,82 @@ class ConfigWindow(LogWindow):
                 state="disabled" if running and not active else "normal")
 
 
-class RunWindow(LogWindow):
-    """Normal mode: connect immediately and close after a successful session."""
+class HubWindow(LogWindow):
+    """Normal mode: one VPN connection and a list of client sessions.
+
+    The VPN is brought up at once and the first session of the requested kind
+    is added. More SSH sessions (any number) and one HopToDesk session can be
+    added; each can be closed alone. ``Disconnect`` (or the window's X) closes
+    all sessions and the VPN. After a failure the window stays open with the log.
+    """
 
     def __init__(self, root: tk.Tk, settings: Settings, client: str) -> None:
-        """Create the window and connect with the given client."""
-        super().__init__(root, log_row=0)
-        self.button = ttk.Button(self, text="Disconnect", command=self.close)
-        self.button.grid(row=1, column=2, pady=(8, 0), sticky="e")
-        self.start_session(
-            settings, lambda session: session.run(test_only=False, client=client))
+        """Create the window and connect; ``client`` is the first session."""
+        super().__init__(root, log_row=2, log_height=10)
+        self.connection: Optional[Connection] = None
+        self.shown: list[tuple[int, str]] = []
+
+        self.tree = ttk.Treeview(self, columns=("session",), show="headings",
+                                 height=4, selectmode="browse")
+        self.tree.heading("session", text="Sessions")
+        self.tree.grid(row=0, column=0, columnspan=3, sticky="ew")
+
+        buttons = ttk.Frame(self)
+        buttons.grid(row=1, column=0, columnspan=3, pady=8, sticky="e")
+        self.add_ssh_button = ttk.Button(buttons, text="Add SSH session",
+                                         command=self.add_ssh)
+        self.add_hop_button = ttk.Button(buttons, text="Add HopToDesk session",
+                                         command=self.add_hoptodesk)
+        self.close_button = ttk.Button(buttons, text="Close session",
+                                       command=self.close_selected)
+        self.disconnect_button = ttk.Button(buttons, text="Disconnect",
+                                            command=self.close)
+        for button in (self.add_ssh_button, self.add_hop_button,
+                       self.close_button, self.disconnect_button):
+            button.pack(side="left", padx=2)
+
+        def job(session: Session) -> bool:
+            self.connection = Connection(session)
+            return self.connection.run(client)
+
+        self.start_session(settings, job)
+
+    def add_ssh(self) -> None:
+        """Add another PuTTY window to the connection."""
+        if self.connection:
+            self.connection.add_ssh()
+
+    def add_hoptodesk(self) -> None:
+        """Add the HopToDesk session to the connection."""
+        if self.connection:
+            self.connection.add_hoptodesk()
+
+    def close_selected(self) -> None:
+        """Close the selected session; the VPN stays up."""
+        selection = self.tree.selection()
+        if self.connection and selection:
+            self.connection.close_session(int(selection[0]))
 
     def refresh(self) -> None:
-        """Close on success; keep the log visible after a failure."""
+        """Show the sessions, enable the buttons, close after a clean exit."""
         if self.worker is None:
             return
+        connection = self.connection
+        if connection is not None:
+            sessions = connection.sessions()
+            if sessions != self.shown:
+                self.tree.delete(*self.tree.get_children())
+                for number, title in sessions:
+                    self.tree.insert("", "end", iid=str(number), values=(title,))
+                self.shown = sessions
+            for button, kind in ((self.add_ssh_button, "ssh"),
+                                 (self.add_hop_button, "hoptodesk")):
+                button.configure(
+                    state="normal" if connection.can_add(kind) else "disabled")
+            self.close_button.configure(
+                state="normal" if sessions else "disabled")
         if not self.running():
             if self.success:
-                self.root.destroy()
+                self.root.destroy()  # last: nothing may touch the window after
             else:
-                self.button.configure(text="Close")
+                self.disconnect_button.configure(text="Close")

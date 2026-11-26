@@ -1,4 +1,4 @@
-"""Connection test, real connection, diagnostics and the remote probe."""
+"""Connection test, diagnostics and the remote probe."""
 
 import threading
 import unittest
@@ -10,39 +10,31 @@ from tests.support import GOOD_PROBE, SessionTestCase
 
 
 class RunTest(SessionTestCase):
-    """:meth:`Session.run` in test mode and in real mode."""
+    """:meth:`Session.run_test`, the step-by-step connection test."""
 
     def test_connection_test_passes(self) -> None:
-        self.assertTrue(self.new_session().run(test_only=True))
-        self.assert_no_secret_files()
-
-    def test_real_ssh_session_ends_when_putty_exits(self) -> None:
-        self.assertTrue(self.new_session().run(test_only=False))
+        self.assertTrue(self.new_session().run_test())
         self.assert_no_secret_files()
 
     def test_rejected_vpn_login_fails_with_a_hint(self) -> None:
         self.fake_openvpn(mode="auth_failed")
-        self.assertFalse(self.new_session().run(test_only=True))
+        self.assertFalse(self.new_session().run_test())
         self.assertIn("wrong VPN user name or password", self.log_text())
         self.assert_no_secret_files()
 
     def test_missing_ping_reply_is_only_a_warning(self) -> None:
         self.ping_reply = False
-        self.assertTrue(self.new_session().run(test_only=True))
+        self.assertTrue(self.new_session().run_test())
         self.assertIn("does not answer to ping", self.log_text())
 
     def test_closed_tcp_port_of_the_vpn_server_fails(self) -> None:
         self.write_profile("client\nproto tcp\nremote 127.0.0.1 1\n")
         store.save_settings(self.settings)
-        self.assertFalse(self.new_session().run(test_only=True))
+        self.assertFalse(self.new_session().run_test())
 
     def test_missing_program_fails_before_connecting(self) -> None:
         settings = replace(self.settings, openvpn_exe="/nonexistent/openvpn")
-        self.assertFalse(self.new_session(settings).run(test_only=True))
-
-    def test_second_session_is_refused(self) -> None:
-        self.assertFalse(self.new_session(
-            replace(self.settings, use_ssh=False)).run(test_only=False, client="ssh"))
+        self.assertFalse(self.new_session(settings).run_test())
 
     def test_key_option(self) -> None:
         self.assertEqual(self.new_session(replace(
@@ -60,30 +52,15 @@ class HopToDeskTest(SessionTestCase):
         store.save_settings(self.settings)
 
     def test_both_clients_in_one_test(self) -> None:
-        self.assertTrue(self.new_session().run(test_only=True))
-
-    def test_session_passes_address_and_port_and_waits_for_disconnect(self) -> None:
-        stop = self.stop_after(1.0)
-        self.assertTrue(self.new_session(stop=stop).run(False, "hoptodesk"))
-        self.assertEqual(self.wait_for(self.marker),
-                         f"--connect 127.0.0.1:{self.port}")
-
-    def test_default_port_is_not_appended(self) -> None:
-        settings = replace(self.settings, hoptodesk_port="21118")
-        self.new_session(settings, self.stop_after(1.0)).run(False, "hoptodesk")
-        self.assertEqual(self.wait_for(self.marker), "--connect 127.0.0.1")
+        self.assertTrue(self.new_session().run_test())
 
     def test_hoptodesk_only_does_not_need_putty(self) -> None:
         settings = replace(self.settings, use_ssh=False, putty_exe="/nonexistent")
-        self.assertTrue(self.new_session(settings).run(test_only=True))
-
-    def test_disabled_client_cannot_be_started(self) -> None:
-        settings = replace(self.settings, use_ssh=False)
-        self.assertFalse(self.new_session(settings).run(False, "ssh"))
+        self.assertTrue(self.new_session(settings).run_test())
 
     def test_unreachable_port_fails(self) -> None:
         settings = replace(self.settings, hoptodesk_port="1")
-        self.assertFalse(self.new_session(settings).run(test_only=True))
+        self.assertFalse(self.new_session(settings).run_test())
         self.assert_no_secret_files()
 
 

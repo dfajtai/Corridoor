@@ -3,10 +3,12 @@
 *One corridor, one door.*
 
 A lightweight Windows launcher that brings up an OpenVPN **split tunnel** to a
-single host and then opens an SSH (PuTTY) or HopToDesk session to it. Only the
+single host and then opens SSH (PuTTY) and HopToDesk sessions to it. Only the
 traffic addressed to that host uses the VPN; everything else keeps its normal route.
+One corridor, one door, as many rooms behind it as you need: several sessions share
+the one VPN connection.
 
-![Settings window](docs/images/settings.png)
+![Sessions window](docs/images/sessions.png)
 
 > **Status:** VPN split tunnel, SSH, named pipes and HopToDesk have been used
 > successfully on Windows. Folder permissions, crash cleanup through the Job
@@ -48,21 +50,23 @@ and remote host, select **Save & test**, and start **Corridoor SSH** or
 ## Features
 
 - **Single-host split tunnel:** routes pushed by the server are ignored.
-- **Two clients:** SSH through PuTTY, or remote desktop through HopToDesk.
+- **Several sessions on one VPN:** add any number of SSH (PuTTY) windows and one
+  HopToDesk session to the list, and close each on its own. Disconnecting closes all.
 - **Settings window** with a step-by-step connection test and full diagnostics.
 - **Encrypted storage:** settings, passwords and the profile copy are protected
   with Windows DPAPI in an administrator-only folder.
 - **Named pipes (test feature):** secrets reach OpenVPN and PuTTY without temporary files.
-- **Clean shutdown:** OpenVPN stops with the session, and a Windows Job Object
-  ends it if the launcher crashes.
+- **Clean shutdown:** closing the main window stops every session and the VPN, and
+  a Windows Job Object ends OpenVPN and all PuTTY windows if the launcher crashes.
 - **Standard library only** at runtime.
 
 ## How it works
 
 1. OpenVPN starts with `--route-nopull` and a `/32` route to the target.
 2. The launcher waits for `Initialization Sequence Completed`.
-3. It starts PuTTY or HopToDesk against the target address.
-4. It stops OpenVPN when the session is over.
+3. It opens the first session (PuTTY or HopToDesk) against the target address;
+   more can be added from the list.
+4. It stops all sessions and OpenVPN when you disconnect.
 
 ## Documentation
 

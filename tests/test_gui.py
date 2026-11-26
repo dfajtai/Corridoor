@@ -7,6 +7,7 @@ import unittest
 from unittest import mock
 from unittest.mock import MagicMock
 
+from corridoor.connection import Connection
 from corridoor.session import Session
 from corridoor.settings import Settings
 
@@ -55,7 +56,7 @@ sys.modules.pop("corridoor.gui", None)  # do not leak the stubbed module
 
 
 class GuiTest(unittest.TestCase):
-    """The settings window and the run window, driven without a display."""
+    """The settings window and the hub window, driven without a display."""
 
     def window(self):
         return gui.ConfigWindow(MagicMock(), Settings(profile_file="a", host="h"))
@@ -73,13 +74,40 @@ class GuiTest(unittest.TestCase):
             self.assertIsNone(window.save())
             self.assertEqual(save.call_count, 1)
 
-    def test_run_window_reports_success(self) -> None:
-        with mock.patch.object(Session, "run",
-                               lambda self, test_only, client="ssh":
-                               client == "hoptodesk"):
-            window = gui.RunWindow(MagicMock(), Settings(), "hoptodesk")
+    def hub(self, connection):
+        """Create a HubWindow whose (stub) connection ends at once."""
+        with mock.patch.object(Connection, "run", lambda self, client="ssh": True):
+            window = gui.HubWindow(MagicMock(), Settings(), "ssh")
             window.worker.join()
-        self.assertTrue(window.success)
+        window.connection = connection
+        return window
+
+    def test_hub_window_reports_success(self) -> None:
+        self.assertTrue(self.hub(None).success)
+
+    def test_hub_buttons_follow_what_the_connection_allows(self) -> None:
+        connection = MagicMock()
+        connection.sessions.return_value = [(1, "SSH #1")]
+        connection.can_add.side_effect = lambda kind: kind == "ssh"
+        window = self.hub(connection)
+        # The stubbed ttk hands out one shared button; use separate ones here.
+        for name in ("add_ssh_button", "add_hop_button", "close_button"):
+            setattr(window, name, MagicMock())
+        window.refresh()
+        window.add_ssh_button.configure.assert_called_with(state="normal")
+        window.add_hop_button.configure.assert_called_with(state="disabled")
+        window.close_button.configure.assert_called_with(state="normal")
+
+    def test_hub_buttons_pass_commands_on(self) -> None:
+        connection = MagicMock()
+        window = self.hub(connection)
+        window.add_ssh()
+        window.add_hoptodesk()
+        window.tree.selection.return_value = ("3",)
+        window.close_selected()
+        connection.add_ssh.assert_called_once()
+        connection.add_hoptodesk.assert_called_once()
+        connection.close_session.assert_called_once_with(3)
 
     def test_pipe_test_result_is_applied_and_saved(self) -> None:
         window = self.window()

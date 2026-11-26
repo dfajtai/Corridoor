@@ -9,8 +9,9 @@ The class is organised in four groups of methods:
 1. step bookkeeping (``step``, ``warn``),
 2. secrets and cleanup (``secret``, ``cleanup``),
 3. single checks and child processes (``check_*``, ``start_vpn``, ``run_*``),
-4. the complete jobs (``run``; ``diagnose`` and ``pipe_test`` live in their own
-   modules and are only delegated to here).
+4. the complete jobs (``run_test``; ``diagnose`` and ``pipe_test`` live in
+   their own modules and are only delegated to here). A long-lived connection
+   with several client sessions is :class:`corridoor.connection.Connection`.
 """
 
 import logging
@@ -35,8 +36,6 @@ READY_MARKER: str = "Initialization Sequence Completed"
 VPN_TIMEOUT: float = 60.0   # seconds to wait for the tunnel
 SSH_TIMEOUT: float = 30.0   # seconds for one non-interactive plink call
 TCP_TIMEOUT: float = 5.0    # seconds for a TCP reachability probe
-# PuTTY reads the password file while parsing its command line; delete it after.
-PWFILE_LIFETIME: float = 10.0
 
 # Known OpenVPN log fragments and what they usually mean.
 VPN_HINTS: dict[str, str] = {
@@ -60,11 +59,14 @@ class Secret(NamedTuple):
 
     ``path`` is given to the program. ``announce`` must be called with the
     process id right after the program has been started: a named pipe only
-    serves that process. For a temporary file it does nothing.
+    serves that process. For a temporary file it does nothing. ``release``
+    deletes the file or closes the pipe of this one secret, before the
+    session-wide :meth:`Session.cleanup`.
     """
 
     path: str
     announce: Callable[[int], None]
+    release: Callable[[], None]
 
 
 class Session:
@@ -90,6 +92,8 @@ class Session:
         self.step_number = 0
         self.step_count = 0
         self.warned = False
+        # Adds a process to the kill-on-close job; set while a tunnel exists.
+        self.job_assign: Optional[Callable[[subprocess.Popen], None]] = None
 
     # ----------------------------------------------------------------- #
     # 1. Step bookkeeping
@@ -149,11 +153,19 @@ class Session:
             process id right after the program has been started.
         """
         if not use_pipe:
-            return Secret(str(self.temp_file(content)), ignore_process_id)
+            path = self.temp_file(content)
+            return Secret(str(path), ignore_process_id,
+                          lambda: path.unlink(missing_ok=True))
         pipe = SecretPipe(content.encode("utf-8"))
         pipe.start()
         self.pipes.append(pipe)
-        return Secret(pipe.path, pipe.allow)
+
+        def release() -> None:
+            pipe.close()
+            if pipe in self.pipes:
+                self.pipes.remove(pipe)
+
+        return Secret(pipe.path, pipe.allow, release)
 
     def cleanup(self) -> None:
         """Close all pipes and delete all temporary files of this session."""
@@ -346,6 +358,7 @@ class Session:
         with winapi.exit_event() as (event_name, signal_exit), \
                 winapi.kill_on_close_job() as assign:
             processes: list[subprocess.Popen] = []
+            self.job_assign = assign  # clients started later join the job too
 
             def connect(profile: Profile, target_ip: str) -> subprocess.Popen:
                 vpn, ready = self.start_vpn(profile, target_ip, event_name)
@@ -357,6 +370,7 @@ class Session:
             try:
                 yield connect
             finally:
+                self.job_assign = None
                 for vpn in processes:
                     if vpn.poll() is None:
                         log.info("Disconnecting the VPN.")
@@ -428,12 +442,19 @@ class Session:
         """Log in non-interactively with plink and run ``exit``."""
         self.ssh_command(target_ip, "exit")
 
-    def run_putty(self, target_ip: str, vpn: subprocess.Popen) -> None:
-        """Start PuTTY and wait until it is closed or a disconnect is requested.
+    def launch_putty(self, target_ip: str
+                     ) -> tuple[subprocess.Popen, Optional[Secret]]:
+        """Start one PuTTY window; the caller watches and closes it.
+
+        PuTTY joins the kill-on-close job when a tunnel exists, so it cannot
+        outlive a crashed launcher.
+
+        Returns:
+            The PuTTY process and the password secret (None without password).
+            The caller releases the secret when it is no longer needed.
 
         Raises:
-            Cancelled: On a user disconnect.
-            StepError: If OpenVPN stops while PuTTY is still running.
+            OSError: If PuTTY cannot be started.
         """
         login = target_ip
         if self.settings.ssh_user:
@@ -443,19 +464,17 @@ class Session:
         password = self.ssh_secret()
         if password:
             command += ["-pwfile", password.path]
-        putty = subprocess.Popen(command)
-        if password:
-            password.announce(putty.pid)
-        started = time.monotonic()
-        while putty.poll() is None:
-            if self.stop.wait(0.2):
-                raise Cancelled
-            # A temporary file is removed early; a pipe only serves PuTTY anyway.
-            if (password and not self.settings.pipe_ssh
-                    and time.monotonic() - started > PWFILE_LIFETIME):
-                Path(password.path).unlink(missing_ok=True)
-            if vpn.poll() is not None:
-                raise StepError("OpenVPN stopped unexpectedly")
+        try:
+            putty = subprocess.Popen(command)
+            if password:
+                password.announce(putty.pid)
+            if self.job_assign is not None:
+                self.job_assign(putty)
+        except BaseException:
+            if password:
+                password.release()
+            raise
+        return putty, password
 
     # --- HopToDesk ---
 
@@ -508,27 +527,23 @@ class Session:
             self.warn(f"version {version} is older than {hoptodesk.MIN_VERSION}, "
                       "update HopToDesk on the remote machine")
 
-    def run_hoptodesk(self, target_ip: str, vpn: subprocess.Popen) -> None:
-        """Start a direct IP session and keep the tunnel up until disconnect.
+    def launch_hoptodesk(self, target_ip: str) -> subprocess.Popen:
+        """Start a direct IP session with HopToDesk.
 
         The launched process may hand the request over to an already running
         HopToDesk instance and exit at once, so its end says nothing about the
-        session. The tunnel therefore stays until the user disconnects.
+        session. It is therefore not put into the job and not watched.
 
         Raises:
-            Cancelled: On the user's disconnect (the normal way to end).
-            StepError: If OpenVPN stops unexpectedly.
+            OSError: If HopToDesk cannot be started.
         """
         peer = target_ip
         if self.settings.hoptodesk_port != hoptodesk.DEFAULT_PORT:
             peer = f"{target_ip}:{self.settings.hoptodesk_port}"
         # No password argument: "--password" would change this computer's setting.
-        subprocess.Popen([self.settings.hoptodesk_exe, "--connect", peer])
-        log.info("  Enter the password in HopToDesk. Click Disconnect when done.")
-        while not self.stop.wait(0.2):
-            if vpn.poll() is not None:
-                raise StepError("OpenVPN stopped unexpectedly")
-        raise Cancelled
+        process = subprocess.Popen([self.settings.hoptodesk_exe, "--connect", peer])
+        log.info("  Enter the password in HopToDesk.")
+        return process
 
     # ----------------------------------------------------------------- #
     # 4. Complete jobs
@@ -544,64 +559,52 @@ class Session:
         from . import pipetest
         return pipetest.run(self)
 
-    def run(self, test_only: bool, client: str = "ssh") -> bool:
-        """Execute all steps, stopping at the first failure.
+    def run_test(self) -> bool:
+        """Test every enabled client step by step, then disconnect again.
 
-        Args:
-            test_only: Check every enabled client and disconnect again.
-            client: ``"ssh"`` or ``"hoptodesk"``; used only for real work.
+        Stops at the first failing step. Real sessions are handled by
+        :class:`corridoor.connection.Connection`.
 
         Returns:
-            False if a step failed, True otherwise (including a user disconnect).
+            False if a step failed, True otherwise (including a user cancel).
         """
-        clients = self.enabled_clients() if test_only else (client,)
-        test_ssh = test_only and "ssh" in clients
+        clients = self.enabled_clients()
+        test_ssh = "ssh" in clients
         login_test = test_ssh and bool(self.settings.ssh_user)
-        test_hop = test_only and "hoptodesk" in clients
+        test_hop = "hoptodesk" in clients
         self.step_number = 0
-        # Programs, profile, name, VPN (+ VPN server and ping in a test).
-        self.step_count = (6 + test_ssh + login_test + test_hop) if test_only else 5
-        log.info("--- %s started ---",
-                 "Test" if test_only else f"Connection ({client})")
+        # Programs, profile, name, VPN server, VPN, ping + the client checks.
+        self.step_count = 6 + test_ssh + login_test + test_hop
+        log.info("--- Test started ---")
         try:
             with winapi.single_instance():
                 store.remove_temp_files()
                 with self.step("Checking programs"):
-                    if not set(clients) <= set(self.enabled_clients()):
-                        raise StepError(f"'{client}' is switched off in the settings")
                     self.check_programs(clients)
                 with self.step("Checking the OpenVPN profile"):
                     profile = store.load_profile(self.settings)
                 with self.step(f"Resolving {self.settings.host}"):
                     target_ip = socket.gethostbyname(self.settings.host)
                     log.info("  address: %s", target_ip)
-                if test_only:
-                    with self.step("Checking the VPN server"):
-                        self.check_vpn_server(profile)
+                with self.step("Checking the VPN server"):
+                    self.check_vpn_server(profile)
                 with self.vpn_tunnel() as connect:
                     with self.step("Connecting the VPN"):
-                        vpn = connect(profile, target_ip)
-                    if test_only:
-                        with self.step(f"Pinging {target_ip} through the VPN"):
-                            self.ping_target(target_ip)
-                        if test_ssh:
-                            with self.step(f"Reaching SSH port {self.settings.port}"):
-                                self.check_ssh_port(target_ip)
-                            if login_test:
-                                with self.step("Testing the SSH login"):
-                                    self.check_login(target_ip)
-                            else:
-                                log.info("No SSH user set, login test skipped.")
-                        if test_hop:
-                            port = self.settings.hoptodesk_port
-                            with self.step(f"Reaching HopToDesk port {port}"):
-                                self.check_hoptodesk_port(target_ip)
-                    elif client == "hoptodesk":
-                        with self.step("Running HopToDesk"):
-                            self.run_hoptodesk(target_ip, vpn)
-                    else:
-                        with self.step("Running PuTTY (close it to disconnect)"):
-                            self.run_putty(target_ip, vpn)
+                        connect(profile, target_ip)
+                    with self.step(f"Pinging {target_ip} through the VPN"):
+                        self.ping_target(target_ip)
+                    if test_ssh:
+                        with self.step(f"Reaching SSH port {self.settings.port}"):
+                            self.check_ssh_port(target_ip)
+                        if login_test:
+                            with self.step("Testing the SSH login"):
+                                self.check_login(target_ip)
+                        else:
+                            log.info("No SSH user set, login test skipped.")
+                    if test_hop:
+                        port = self.settings.hoptodesk_port
+                        with self.step(f"Reaching HopToDesk port {port}"):
+                            self.check_hoptodesk_port(target_ip)
         except Cancelled:
             log.info("Stopped by the user.")
         except StepError as error:

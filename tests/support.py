@@ -8,7 +8,7 @@ What is replaced:
 
 * ``winapi.dpapi``              a reversible XOR instead of encryption
 * ``winapi.single_instance``    no mutex
-* ``winapi.exit_event``         no event
+* ``winapi.exit_event``         a file instead of a Windows event
 * ``winapi.kill_on_close_job``  no job object
 * ``net.ping``                  the answer is ``self.ping_reply``
 * ``store.SECRET_DIR`` & co.    a temporary folder
@@ -38,7 +38,7 @@ from corridoor.settings import Settings
 READY_LINE = "Initialization Sequence Completed"
 
 OPENVPN_SCRIPT = """
-import sys, time
+import os, sys, time
 args = sys.argv[1:]
 if {calls!r}:
     with open({calls!r}, "a") as stream:
@@ -59,6 +59,12 @@ mode = {mode!r}
 if mode == "ready":
     print({ready!r}, flush=True)
     time.sleep({sleep!r})
+elif mode == "serve":
+    # Runs until the launcher signals the exit event (a file in the tests).
+    print({ready!r}, flush=True)
+    event = args[args.index("--service") + 1]
+    while not os.path.exists(event):
+        time.sleep(0.05)
 elif mode == "auth_failed":
     print("AUTH_FAILED", flush=True)
     sys.exit(1)
@@ -76,6 +82,11 @@ import sys
 sys.stdout.write({out!r})
 sys.stderr.write({err!r})
 sys.exit({code!r})
+"""
+
+PUTTY_SCRIPT = """
+import time
+time.sleep({sleep!r})
 """
 
 HOPTODESK_SCRIPT = """
@@ -142,8 +153,11 @@ class SessionTestCase(unittest.TestCase):
         patch("corridoor.winapi.dpapi",
               lambda data, encrypt: bytes(byte ^ 0x5A for byte in data))
         patch("corridoor.winapi.single_instance", contextlib.nullcontext)
-        patch("corridoor.winapi.exit_event",
-              lambda: contextlib.nullcontext(("event", lambda: None)))
+        # The "exit event" is a file: setting it creates the file, and the
+        # fake OpenVPN in mode "serve" ends when it exists.
+        self.exit_file = self.work_dir / "exit_event"
+        patch("corridoor.winapi.exit_event", lambda: contextlib.nullcontext(
+            (str(self.exit_file), lambda: self.exit_file.write_text("x"))))
         patch("corridoor.winapi.kill_on_close_job",
               lambda: contextlib.nullcontext(lambda process: None))
         self.ping_reply = True
@@ -184,7 +198,7 @@ class SessionTestCase(unittest.TestCase):
         self.write_profile(f"client\nremote 127.0.0.1 {self.port} tcp\n")
         self.openvpn = self.fake_openvpn()
         self.fake_plink()
-        self.putty = self.fake("putty.exe", "")
+        self.putty = self.fake_putty()
         self.marker = self.work_dir / "hoptodesk_args"
         self.hoptodesk = self.fake(
             "hoptodesk.exe", HOPTODESK_SCRIPT.format(marker=str(self.marker)))
@@ -227,7 +241,8 @@ class SessionTestCase(unittest.TestCase):
         """(Re)write the fake OpenVPN.
 
         Args:
-            mode: ``ready`` (tunnel up), ``auth_failed``, ``auth_failed_hang``
+            mode: ``ready`` (tunnel up, then ``sleep`` seconds), ``serve``
+                (tunnel up until the exit event), ``auth_failed``, ``auth_failed_hang``
                 (rejects but keeps running), ``exit`` (fails at once) or
                 ``hang`` (silent).
             sleep: How long it keeps running after its output.
@@ -238,6 +253,10 @@ class SessionTestCase(unittest.TestCase):
         calls = str(self.work_dir / "openvpn_calls") if count_calls else ""
         return self.fake("openvpn", OPENVPN_SCRIPT.format(
             calls=calls, reject=reject, mode=mode, ready=READY_LINE, sleep=sleep))
+
+    def fake_putty(self, sleep: float = 0) -> str:
+        """(Re)write the fake PuTTY; it stays open for ``sleep`` seconds."""
+        return self.fake("putty.exe", PUTTY_SCRIPT.format(sleep=sleep))
 
     def fake_plink(self, out: str = "", err: str = "", code: int = 0) -> str:
         """(Re)write the fake plink with the given output and exit code."""
